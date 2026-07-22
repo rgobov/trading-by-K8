@@ -23,10 +23,20 @@ FILTER_MIN_QUARTERS_ABOVE = 2
 FILTER_MIN_LOOKBACK_QUARTERS = 2
 FILTER_MIN_VOLUME = 100_000
 FILTER_EXCLUDE_SECTORS = ["Financial Services", "Insurance", "Banks", "Capital Markets",
-                          "Consumer Defensive", "Utilities", "Real Estate", "Energy", "Healthcare"]
+                          "Consumer Cyclical", "Basic Materials", "Utilities", "Real Estate", "Energy", "Healthcare"]
 
 BACKTEST_MAX_DEPOSIT_PER_POSITION = 0.33
 BACKTEST_MAX_CONCURRENT_POSITIONS = 3
+# Volatility-based sector position weights (higher weight = less volatile = bigger position)
+# Baseline gap-down rate: Technology 30%, CommSvcs 30.6%, Industrials 9.3%, ConsDef 2.3%
+# Weight = avg_gap_rate / sector_gap_rate, capped [0.5, 2.0]
+BACKTEST_SECTOR_VOL_WEIGHTS = {
+    "Technology": 0.60,
+    "Communication Services": 0.59,
+    "Industrials": 1.94,
+    "Consumer Defensive": 2.0,
+}
+
 BACKTEST_MAX_POS_FRAC = 0.50  # hard cap: не больше 50% капитала на сделку
 BACKTEST_COMMISSION_BUY = 0.00035
 BACKTEST_COMMISSION_SELL = 0.00035

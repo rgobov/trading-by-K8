@@ -9,6 +9,7 @@ from src.config import (
     BACKTEST_SLIPPAGE,
     BACKTEST_MAX_POS_FRAC,
     BACKTEST_MAX_CONCURRENT_POSITIONS,
+    BACKTEST_SECTOR_VOL_WEIGHTS,
     DATA_PROCESSED,
 )
 from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
@@ -31,8 +32,11 @@ class Backtest:
         self.equity_curve: list[float] = [initial_capital]
         self._price_cache: dict[str, pd.DataFrame] = {}
 
-    def run_for_candidates(self, candidates: pd.DataFrame, years: int = 3) -> 'Backtest':
+    def run_for_candidates(self, candidates: pd.DataFrame, years: int = 3,
+                            sectors_map: dict[str, str] = None) -> 'Backtest':
         """Run portfolio-based backtest: process trades by date, max 3 concurrent positions"""
+        if sectors_map is None:
+            sectors_map = {}
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=years * 365)
         all_tickers = candidates["ticker"].tolist()
@@ -128,6 +132,10 @@ class Backtest:
                 k = t["k_value"]
                 k_mult = min(k / 1.1, 3.0) if self.k_weighted and k > 0 else 1.0
                 t["pos_frac"] = min(self.max_per_position * k_mult, BACKTEST_MAX_POS_FRAC)
+                # Apply sector volatility weight
+                sector = sectors_map.get(t["ticker"], "")
+                vol_w = BACKTEST_SECTOR_VOL_WEIGHTS.get(sector, 1.0)
+                t["pos_frac"] *= vol_w
 
             # Calc capital available after leaving room for open positions
             used_capital = sum(p.get("cost", 0) for p in open_positions)
