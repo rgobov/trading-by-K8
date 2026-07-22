@@ -1,79 +1,148 @@
 #!/usr/bin/env python3
-"""Daily runner: check earnings dates for today/tomorrow, send signals via email"""
-import sys, os, smtplib
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pandas as pd
+"""Daily runner: SEC → K calc → filter candidates → check earnings → send email signals"""
+import sys, os, json, smtplib, time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from src.config import DATA_PROCESSED, DATA_RAW, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pandas as pd
+from src.config import (
+    DATA_RAW, DATA_PROCESSED, OUTPUT_DIR,
+    SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO,
+    FILTER_EXCLUDE_SECTORS, FILTER_K_THRESHOLD,
+)
+from src.edgar_parser import get_fundamentals, get_ticker_to_cik
+from src.calculator import calc_k_for_ticker
+from src.filter import filter_by_k_stability
 from src.earnings_calendar import get_earnings_dates
 
+os.makedirs(DATA_RAW, exist_ok=True)
+os.makedirs(DATA_PROCESSED, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def log(msg):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)
+    with open(f"{OUTPUT_DIR}/daily_runner.log", "a") as f:
+        f.write(line + "\n")
+
 def send_email(subject: str, body: str):
-    host = SMTP_HOST
-    port = SMTP_PORT
-    user = SMTP_USER
-    pwd = SMTP_PASSWORD
-    to = EMAIL_TO
-    if not all([host, user, pwd, to]):
-        print("Email config incomplete, skipping")
+    if not all([SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_TO]):
+        log("Email config incomplete")
         return False
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = user
-    msg["To"] = to
+    msg["From"] = SMTP_USER
+    msg["To"] = EMAIL_TO
     msg.set_content(body)
+    import ssl
     try:
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port) as s:
-                s.login(user, pwd)
-                s.send_message(msg)
-        else:
-            with smtplib.SMTP(host, port) as s:
-                s.starttls()
-                s.login(user, pwd)
-                s.send_message(msg)
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
+            s.login(SMTP_USER, SMTP_PASSWORD)
+            s.send_message(msg)
         return True
     except Exception as e:
-        print(f"Email send failed: {e}")
+        log(f"Email error: {e}")
         return False
 
-def send_telegram(msg: str):
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-    if token and chat_id:
-        import requests
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+# === 1. Load S&P 500 tickers ===
+log("Loading tickers...")
+tickers_df = pd.read_csv(f"{DATA_RAW}/sp500_tickers.csv")
+all_tickers = tickers_df["ticker"].tolist()
+log(f"  {len(all_tickers)} tickers")
 
-def notify(msg: str):
-    print(msg)
-    send_telegram(msg)
-    send_email("ISTS Trading Signals", msg)
+# === 2. Get sector info (cached) ===
+sectors_path = f"{DATA_RAW}/ticker_sectors.json"
+if os.path.exists(sectors_path):
+    with open(sectors_path) as f:
+        sectors = json.load(f)
+else:
+    log("  Fetching sectors from yfinance...")
+    import yfinance as yf
+    sectors = {}
+    for t in all_tickers:
+        try:
+            info = yf.Ticker(t).info
+            sectors[t] = info.get("sector", "")
+        except:
+            sectors[t] = ""
+        time.sleep(0.02)
+    with open(sectors_path, "w") as f:
+        json.dump(sectors, f)
+    log(f"  Cached {len(sectors)} sectors")
 
-candidates = pd.read_csv(f"{DATA_PROCESSED}/filtered_candidates.csv")
-tickers = candidates["ticker"].tolist()
+# === 3. Parse SEC fundamentals (incremental) ===
+log("Parsing SEC fundamentals (incremental)...")
+need_parse = [t for t in all_tickers if not os.path.exists(f"{DATA_RAW}/{t}_fundamentals.csv")]
+if need_parse:
+    log(f"  Need to parse: {len(need_parse)}")
+    for t in need_parse:
+        try:
+            df = get_fundamentals(t)
+            if not df.empty:
+                df.to_csv(f"{DATA_RAW}/{t}_fundamentals.csv", index=False)
+        except:
+            pass
+        time.sleep(0.12)
+parsed = len([f for f in os.listdir(DATA_RAW) if f.endswith("_fundamentals.csv")])
+log(f"  Parsed: {parsed}/{len(all_tickers)}")
 
-df = get_earnings_dates(tickers)
+# === 4. Calculate K (incremental) ===
+log("Calculating K...")
+rows = []
+for t in all_tickers:
+    path = f"{DATA_RAW}/{t}_fundamentals.csv"
+    if not os.path.exists(path):
+        continue
+    result = calc_k_for_ticker(t)
+    if "error" not in result:
+        qs = result.get("quarters", [])
+        rows.append({"ticker": t, "avg_K": result.get("avg_K", 0),
+                     "latest_K": qs[-1]["K"] if qs else 0, "qcount": len(qs)})
+
+df_k = pd.DataFrame(rows).sort_values("avg_K", ascending=False)
+df_k.to_csv(f"{DATA_PROCESSED}/all_K_ratings.csv", index=False)
+log(f"  {len(df_k)} K ratings")
+
+# === 5. Filter candidates ===
+log("Filtering candidates...")
+df_f = filter_by_k_stability(df_k, threshold=FILTER_K_THRESHOLD, min_above=2, lookback=3)
+df_f["sector"] = df_f["ticker"].map(sectors)
+df_f = df_f[~df_f["sector"].isin(FILTER_EXCLUDE_SECTORS)]
+df_f = df_f[df_f["sector"].notna() & (df_f["sector"] != "")]
+df_f.to_csv(f"{DATA_PROCESSED}/filtered_candidates.csv", index=False)
+log(f"  {len(df_f)} candidates")
+
+# === 6. Check earnings dates ===
+log("Checking earnings dates...")
+candidates = df_f["ticker"].tolist()
+df_earnings = get_earnings_dates(candidates)
 today = datetime.now().date()
 tomorrow = today + timedelta(days=1)
 
-signals = []
-for _, row in df.iterrows():
+signals_buy = []
+signals_sell = []
+for _, row in df_earnings.iterrows():
     ed = row["date"]
     if isinstance(ed, str):
         ed = datetime.strptime(ed[:10], "%Y-%m-%d").date()
-    if ed in (today, tomorrow):
-        signals.append(row)
+    if ed == today:
+        signals_buy.append(row["ticker"])
+    elif ed == tomorrow:
+        signals_buy.append(row["ticker"])
 
-if not signals:
+if not signals_buy:
     msg = f"ISTS: No earnings today ({today})."
-    notify(msg)
+    log(msg)
+    send_email("ISTS Trading Signals", msg)
 else:
-    lines = [f"ISTS — Earnings {today}", "=" * 40]
-    for s in signals:
-        ticker = s["ticker"]
-        ed = s["date"]
-        surprise = f" (surprise: {s.get('surprise_pct', '?')}%)" if pd.notna(s.get('surprise_pct')) else ""
-        lines.append(f"{ticker:>6s} — report {ed}{surprise}")
+    lines = [f"ISTS Signals — {today}", "=" * 40,
+             f"BUY before close ({len(signals_buy)}):", ", ".join(signals_buy),
+             "", f"Positions: 33% + K-weight, max 3 concurrent"]
     msg = "\n".join(lines)
-    notify(msg)
+    log(msg)
+    send_email(f"ISTS: {len(signals_buy)} trades today", msg)
+
+log("Done")

@@ -2,14 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir --break-system-packages yfinance pandas numpy requests lxml tqdm scikit-learn
+RUN pip install --no-cache-dir --break-system-packages \
+    yfinance pandas numpy requests lxml tqdm
 
 COPY src/ ./src/
-COPY requirements.txt .
-COPY overnight_pipeline.py .
-COPY run_slippage.py .
-COPY daily_runner.py . 2>/dev/null || true
+COPY daily_runner.py .
+COPY data/raw/sp500_tickers.csv data/raw/
 
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+RUN mkdir -p data/raw data/processed output
 
-CMD ["python3", "--version"]
+CMD ["python3", "daily_runner.py"]
