@@ -1,0 +1,12 @@
+services:
+  daily-runner:
+    build: .
+    image: trading-by-k8
+    container_name: trading-bot
+    command: python3 daily_runner.py
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+    env_file:
+      - .env
+    restart: "no"

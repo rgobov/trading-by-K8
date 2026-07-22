@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+*.csv
+data/raw/*
+data/processed/*
+output/*
+!data/raw/sp500_tickers.csv
+*.log
+.DS_Store
+.idea/
+target/
+*.iml
+.mvn/
+run_bg.sh
