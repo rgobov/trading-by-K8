@@ -1,11 +1,35 @@
 #!/usr/bin/env python3
-"""Daily runner: check earnings dates for today/tomorrow, send signals"""
-import sys, os, json
+"""Daily runner: check earnings dates for today/tomorrow, send signals via email or Telegram"""
+import sys, os, smtplib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from src.config import DATA_PROCESSED, DATA_RAW
-from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
+from src.earnings_calendar import get_earnings_dates
+
+def send_email(subject: str, body: str):
+    host = os.getenv("SMTP_HOST", "")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER", "")
+    pwd = os.getenv("SMTP_PASSWORD", "")
+    to = os.getenv("EMAIL_TO", "")
+    if not all([host, user, pwd, to]):
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = user
+    msg["To"] = to
+    msg.set_content(body)
+    try:
+        with smtplib.SMTP(host, port) as s:
+            s.starttls()
+            s.login(user, pwd)
+            s.send_message(msg)
+        return True
+    except Exception as e:
+        print(f"Email send failed: {e}")
+        return False
 
 def send_telegram(msg: str):
     token = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -15,6 +39,11 @@ def send_telegram(msg: str):
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
 
+def notify(msg: str):
+    print(msg)
+    send_telegram(msg)
+    send_email("ISTS Trading Signals", msg)
+
 candidates = pd.read_csv(f"{DATA_PROCESSED}/filtered_candidates.csv")
 tickers = candidates["ticker"].tolist()
 
@@ -22,7 +51,6 @@ df = get_earnings_dates(tickers)
 today = datetime.now().date()
 tomorrow = today + timedelta(days=1)
 
-# Trades for today (sell yesterday's buys) and tomorrow (buy)
 signals = []
 for _, row in df.iterrows():
     ed = row["date"]
@@ -32,16 +60,14 @@ for _, row in df.iterrows():
         signals.append(row)
 
 if not signals:
-    msg = "📊 *Сигналов нет* — сегодня и завтра отчетов у кандидатов нет."
-    send_telegram(msg)
-    print(msg)
+    msg = f"ISTS: No earnings today ({today})."
+    notify(msg)
 else:
-    lines = ["📊 *Сигналы на {:%d.%m.%Y}*".format(today), "━━━━━━━━━━━━━━━━"]
+    lines = [f"ISTS — Earnings {today}", "=" * 40]
     for s in signals:
         ticker = s["ticker"]
         ed = s["date"]
         surprise = f" (surprise: {s.get('surprise_pct', '?')}%)" if pd.notna(s.get('surprise_pct')) else ""
-        lines.append(f"🔵 {ticker} — отчет {ed}{surprise}")
+        lines.append(f"{ticker:>6s} — report {ed}{surprise}")
     msg = "\n".join(lines)
-    send_telegram(msg)
-    print(msg)
+    notify(msg)

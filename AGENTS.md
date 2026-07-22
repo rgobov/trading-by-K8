@@ -330,7 +330,7 @@ sudo chown $USER:$USER /opt/trading-by-K8
 git clone https://github.com/rgobov/trading-by-K8.git /opt/trading-by-K8
 cd /opt/trading-by-K8
 cp .env.example .env
-# заполнить TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID
+# заполнить TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (либо SMTP данные для email)
 ```
 
 ### 2. Копировать накопленные данные
