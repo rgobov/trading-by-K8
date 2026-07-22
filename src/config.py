@@ -28,7 +28,6 @@ FILTER_EXCLUDE_SECTORS = ["Financial Services", "Insurance", "Banks", "Capital M
 BACKTEST_MAX_DEPOSIT_PER_POSITION = 0.33
 BACKTEST_MAX_CONCURRENT_POSITIONS = 3
 BACKTEST_MAX_POS_FRAC = 0.50  # hard cap: не больше 50% капитала на сделку
-BACKTEST_STOP_LOSS = -0.05    # -5% stop-loss (выход по Low дня)
 BACKTEST_COMMISSION_BUY = 0.00035
 BACKTEST_COMMISSION_SELL = 0.00035
 BACKTEST_SLIPPAGE = 0.001  # 0.1% slippage per trade

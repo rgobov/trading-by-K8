@@ -7,7 +7,6 @@ from src.config import (
     BACKTEST_COMMISSION_BUY,
     BACKTEST_COMMISSION_SELL,
     BACKTEST_SLIPPAGE,
-    BACKTEST_STOP_LOSS,
     BACKTEST_MAX_POS_FRAC,
     BACKTEST_MAX_CONCURRENT_POSITIONS,
     DATA_PROCESSED,
@@ -204,16 +203,15 @@ class Backtest:
 
         raw_price = float(sell_rows["Close"].iloc[0])
         day_low = float(sell_rows["Low"].iloc[0])
-        day_high = float(sell_rows["High"].iloc[0])
+        cost = pos["cost"]
 
-        # Stop-loss: exit at -5% if day's low dropped below threshold
-        if BACKTEST_STOP_LOSS and day_low <= buy_price * (1 + BACKTEST_STOP_LOSS):
-            sell_price = buy_price * (1 + BACKTEST_STOP_LOSS)
-        else:
-            sell_price = raw_price
+        # Track worst-case equity during holding (intraday low of sell day)
+        worst_equity = self.capital - cost + shares * day_low * (1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE)
+        self.equity_curve.append(worst_equity)
+
+        sell_price = raw_price
 
         proceeds = shares * sell_price * (1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE)
-        cost = pos["cost"]
         pnl = proceeds - cost
         pnl_pct = (proceeds / cost - 1) * 100
 
