@@ -26,10 +26,10 @@ FILTER_EXCLUDE_SECTORS = ["Financial Services", "Insurance", "Banks", "Capital M
                           "Consumer Defensive", "Utilities", "Real Estate", "Energy", "Healthcare"]
 
 BACKTEST_MAX_DEPOSIT_PER_POSITION = 0.33
+BACKTEST_MAX_CONCURRENT_POSITIONS = 3
 BACKTEST_COMMISSION_BUY = 0.00035
 BACKTEST_COMMISSION_SELL = 0.00035
-BACKTEST_SLIPPAGE = 0.001  # 0.1% slippage per trade (realistic for mid/large cap)
-BACKTEST_MAX_POSITION_CAP = 3.0  # max position = initial_capital * max_per_position * cap
+BACKTEST_SLIPPAGE = 0.001  # 0.1% slippage per trade
 BACKTEST_HOLD_DAYS_AFTER = 1
 BACKTEST_BUY_DAYS_BEFORE = 1
 

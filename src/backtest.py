@@ -7,7 +7,7 @@ from src.config import (
     BACKTEST_COMMISSION_BUY,
     BACKTEST_COMMISSION_SELL,
     BACKTEST_SLIPPAGE,
-    BACKTEST_MAX_POSITION_CAP,
+    BACKTEST_MAX_CONCURRENT_POSITIONS,
     DATA_PROCESSED,
 )
 from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
@@ -132,8 +132,8 @@ class Backtest:
             used_capital = sum(p.get("cost", 0) for p in open_positions)
             avail = self.capital - used_capital
 
-            # How many can we open? Max 3 - len(open_positions)
-            slots = 3 - len(open_positions)
+            # How many can we open? Max N - len(open_positions)
+            slots = BACKTEST_MAX_CONCURRENT_POSITIONS - len(open_positions)
 
             # Sort by K desc, take top by slots
             sorted_ops = sorted(new_ops, key=lambda x: x["k_value"], reverse=True)
@@ -151,8 +151,6 @@ class Backtest:
 
                 base = self.capital if self.compounding else self.initial_capital
                 pos_size = base * t["pos_frac"]
-                max_pos = self.initial_capital * t["pos_frac"] * BACKTEST_MAX_POSITION_CAP
-                pos_size = min(pos_size, max_pos)
 
                 # Check can afford
                 pos_size = min(pos_size, avail)
