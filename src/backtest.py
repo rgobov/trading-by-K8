@@ -7,6 +7,8 @@ from src.config import (
     BACKTEST_COMMISSION_BUY,
     BACKTEST_COMMISSION_SELL,
     BACKTEST_SLIPPAGE,
+    BACKTEST_STOP_LOSS,
+    BACKTEST_MAX_POS_FRAC,
     BACKTEST_MAX_CONCURRENT_POSITIONS,
     DATA_PROCESSED,
 )
@@ -126,7 +128,7 @@ class Backtest:
             for t in new_ops:
                 k = t["k_value"]
                 k_mult = min(k / 1.1, 3.0) if self.k_weighted and k > 0 else 1.0
-                t["pos_frac"] = min(self.max_per_position * k_mult, 0.5)
+                t["pos_frac"] = min(self.max_per_position * k_mult, BACKTEST_MAX_POS_FRAC)
 
             # Calc capital available after leaving room for open positions
             used_capital = sum(p.get("cost", 0) for p in open_positions)
@@ -199,7 +201,16 @@ class Backtest:
         sell_rows = sub.loc[sell_mask]
         if sell_rows.empty:
             return
-        sell_price = float(sell_rows["Close"].iloc[0])
+
+        raw_price = float(sell_rows["Close"].iloc[0])
+        day_low = float(sell_rows["Low"].iloc[0])
+        day_high = float(sell_rows["High"].iloc[0])
+
+        # Stop-loss: exit at -5% if day's low dropped below threshold
+        if BACKTEST_STOP_LOSS and day_low <= buy_price * (1 + BACKTEST_STOP_LOSS):
+            sell_price = buy_price * (1 + BACKTEST_STOP_LOSS)
+        else:
+            sell_price = raw_price
 
         proceeds = shares * sell_price * (1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE)
         cost = pos["cost"]

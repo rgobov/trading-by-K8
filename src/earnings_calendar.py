@@ -108,27 +108,117 @@ def get_earnings_dates(tickers: list[str], force_refresh: bool = False) -> pd.Da
     return df_all[df_all["ticker"].isin(tickers)]
 
 def get_earnings_bounds(earnings_date, earnings_datetime=None) -> tuple:
-    """Determine buy and sell dates based on earnings time.
+    """Determine buy and sell dates, shifted to nearest NYSE trading days.
 
     Returns (buy_date, sell_date) as date objects.
-    If earnings is before market (BMO = before open), buy previous day close.
-    If earnings is after market (AMC = after close), buy same day close.
-    Sell at open next day after the earnings date.
     """
     if isinstance(earnings_date, str):
         earnings_date = datetime.strptime(earnings_date[:10], "%Y-%m-%d").date()
 
     if earnings_datetime is not None:
         hour = earnings_datetime.hour if hasattr(earnings_datetime, 'hour') else 0
-        if hour >= 16:  # After market close (4 PM+)
+        if hour >= 16:
             buy_date = earnings_date
-        else:  # Before market open
-            buy_date = earnings_date - timedelta(days=1)
+        else:
+            buy_date = prev_trading_day(earnings_date)
     else:
-        buy_date = earnings_date - timedelta(days=1)
+        buy_date = prev_trading_day(earnings_date)
 
-    sell_date = earnings_date + timedelta(days=1)
+    sell_date = next_trading_day(earnings_date)
     return buy_date, sell_date
+
+
+# === Trading calendar helpers ===
+
+class _TradingCalendar:
+    """NYSE trading calendar: weekends + major holidays"""
+    def __init__(self):
+        self._holidays = self._build_holidays(2000, 2030)
+
+    @staticmethod
+    def _build_holidays(from_year: int, to_year: int) -> set:
+        """Generate set of NYSE holiday dates"""
+        holidays = set()
+        for y in range(from_year, to_year + 1):
+            # New Year's Day
+            holidays.update(_observed(Date(y, 1, 1)))
+            # MLK Day (3rd Monday of January)
+            holidays.add(_nth_weekday(y, 1, 0, 3))
+            # Presidents' Day (3rd Monday of February)
+            holidays.add(_nth_weekday(y, 2, 0, 3))
+            # Good Friday (approximate: Friday before Easter)
+            # Easter approximation (calendar based)
+            a = y % 19; b = y // 100; c = y % 100
+            d = b // 4; e = b % 4; f = (b + 8) // 25
+            g = (b - f + 1) // 3; h = (19 * a + b - d - g + 15) % 30
+            i = c // 4; k = c % 4; l = (32 + 2 * e + 2 * i - h - k) % 7
+            m = (a + 11 * h + 22 * l) // 451
+            month = (h + l - 7 * m + 114) // 31
+            day = ((h + l - 7 * m + 114) % 31) + 1
+            easter = Date(y, month, day)
+            holidays.add(easter - timedelta(days=2))  # Good Friday
+            # Memorial Day (last Monday of May)
+            last_may = Date(y, 5, 31)
+            while last_may.weekday() != 0:
+                last_may -= timedelta(days=1)
+            holidays.add(last_may)
+            # Juneteenth (June 19)
+            holidays.update(_observed(Date(y, 6, 19)))
+            # Independence Day
+            holidays.update(_observed(Date(y, 7, 4)))
+            # Labor Day (1st Monday of September)
+            holidays.add(_nth_weekday(y, 9, 0, 1))
+            # Thanksgiving (4th Thursday of November)
+            holidays.add(_nth_weekday(y, 11, 3, 4))
+            # Christmas
+            holidays.update(_observed(Date(y, 12, 25)))
+        return holidays
+
+    def is_trading_day(self, d) -> bool:
+        """Check if date is a NYSE trading day"""
+        if isinstance(d, datetime):
+            d = d.date()
+        if d.weekday() >= 5:  # Saturday/Sunday
+            return False
+        if d in self._holidays:
+            return False
+        return True
+
+Date = lambda y, m, d: datetime(y, m, d).date()
+
+def _observed(d):
+    """Return set of dates: actual holiday + observed (if on weekend)"""
+    result = {d}
+    if d.weekday() == 5:  # Saturday → observed Friday
+        result.add(d - timedelta(days=1))
+    elif d.weekday() == 6:  # Sunday → observed Monday
+        result.add(d + timedelta(days=1))
+    return result
+
+def _nth_weekday(year, month, weekday, n):
+    """Return nth weekday of month (e.g. 3rd Monday)"""
+    first = Date(year, month, 1)
+    days_until = (weekday - first.weekday()) % 7
+    return first + timedelta(days=days_until + (n - 1) * 7)
+
+_cal = _TradingCalendar()
+
+def prev_trading_day(d):
+    """Return previous NYSE trading day (≤ d, never forward)"""
+    if isinstance(d, datetime):
+        d = d.date()
+    while not _cal.is_trading_day(d):
+        d -= timedelta(days=1)
+    return d
+
+def next_trading_day(d):
+    """Return next NYSE trading day (strictly > d)"""
+    if isinstance(d, datetime):
+        d = d.date()
+    d += timedelta(days=1)
+    while not _cal.is_trading_day(d):
+        d += timedelta(days=1)
+    return d
 
 if __name__ == "__main__":
     tickers = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA"]
