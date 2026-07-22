@@ -14,3 +14,14 @@ target/
 *.iml
 .mvn/
 run_bg.sh
+
+# Java / Spring Boot skeleton (not used)
+*.java
+pom.xml
+mvnw
+mvnw.cmd
+HELP.md
+.gitattributes
+src/main/java/
+src/test/java/
+
