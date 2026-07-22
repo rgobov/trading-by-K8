@@ -25,7 +25,7 @@ FILTER_MIN_VOLUME = 100_000
 FILTER_EXCLUDE_SECTORS = ["Financial Services", "Insurance", "Banks", "Capital Markets",
                           "Consumer Cyclical", "Basic Materials", "Utilities", "Real Estate", "Energy", "Healthcare"]
 
-BACKTEST_MAX_DEPOSIT_PER_POSITION = 0.33
+BACKTEST_MAX_DEPOSIT_PER_POSITION = 0.33  # Kelly ≈ 16.4%, эмпирически 33%
 BACKTEST_MAX_CONCURRENT_POSITIONS = 3
 # Volatility-based sector position weights (higher weight = less volatile = bigger position)
 # Baseline gap-down rate: Technology 30%, CommSvcs 30.6%, Industrials 9.3%, ConsDef 2.3%
@@ -37,7 +37,7 @@ BACKTEST_SECTOR_VOL_WEIGHTS = {
     "Consumer Defensive": 2.0,
 }
 
-BACKTEST_MAX_POS_FRAC = 0.50  # hard cap: не больше 50% капитала на сделку
+BACKTEST_MAX_POS_FRAC = 0.50  # кэп: макс 50% на одну позицию (K-вес × sector vol)
 BACKTEST_COMMISSION_BUY = 0.00035
 BACKTEST_COMMISSION_SELL = 0.00035
 BACKTEST_SLIPPAGE = 0.001  # 0.1% slippage per trade
