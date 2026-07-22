@@ -89,6 +89,7 @@ class Backtest:
                     "sell_date": sell_date,
                     "earnings_date": earnings_date,
                     "k_value": k_value,
+                    "surprise_pct": ear.get("surprise_pct") if hasattr(ear, 'get') else None,
                 })
 
         if not raw_trades:
