@@ -319,6 +319,54 @@ Target: pnl > 0
 | Сектора | yfinance Ticker.info |
 | Список S&P 500 | GitHub dataset |
 
+## Деплой на сервер
+
+### 1. Клонировать и настроить
+
+```bash
+ssh user@server
+sudo mkdir -p /opt/trading-by-K8
+sudo chown $USER:$USER /opt/trading-by-K8
+git clone https://github.com/rgobov/trading-by-K8.git /opt/trading-by-K8
+cd /opt/trading-by-K8
+cp .env.example .env
+# заполнить TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID
+```
+
+### 2. Копировать накопленные данные
+
+С локальной машины перенести кэш данных (если есть):
+```bash
+scp data/raw/*.csv user@server:/opt/trading-by-K8/data/raw/
+scp data/raw/ticker_sectors.json user@server:/opt/trading-by-K8/data/raw/
+```
+
+### 3. Собрать и запустить
+
+```bash
+docker compose build
+# Первый ручной запуск (загрузка данных)
+docker compose run --rm daily-runner
+```
+
+### 4. CRON (ежедневно в 22:00 МСК)
+
+```bash
+crontab -e
+# добавить строку:
+0 22 * * * cd /opt/trading-by-K8 && docker compose run --rm daily-runner >> output/cron.log 2>&1
+```
+
+### 5. Обновление кода
+
+```bash
+cd /opt/trading-by-K8
+git pull
+docker compose build
+```
+
+---
+
 ## Команды
 
 ```bash
@@ -334,4 +382,7 @@ python3 run_slippage.py
 # Проверить статус
 tail -20 output/overnight.log
 grep "return=" output/slippage.log
+
+# Telegram сигналы
+python3 daily_runner.py
 ```
