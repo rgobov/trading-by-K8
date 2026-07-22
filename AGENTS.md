@@ -163,7 +163,7 @@ K = KI × KR × KF
 
 **Базовая доля на позицию:**
 ```
-base_share = MAX_DEPOSIT_PER_POSITION = 0.33 (33% капитала)
+base_share = MAX_DEPOSIT_PER_POSITION = 0.10 (10% капитала)
 ```
 
 **K-взвешенный множитель:**
@@ -179,14 +179,12 @@ pos_share = min(base_share × k_mult, 0.5)  # не больше 50%
 **Размер позиции:**
 - Compounding: `position = current_capital × pos_share`
 - Fixed: `position = initial_capital × pos_share`
-- Capped: `position = min(current_capital × pos_share, initial_capital × pos_share × 3)`
 
 Пример: капитал = $5000, K = 2.0
 - k_mult = min(2.0 / 1.1, 3.0) = min(1.82, 3.0) = 1.82
-- pos_share = min(0.33 × 1.82, 0.5) = 0.5
-- Compounding: position = 5000 × 0.5 = $2500
-- Fixed: position = 1500 × 0.5 = $750
-- Capped: position = min(2500, 1500 × 0.5 × 3) = min(2500, 2250) = $2250
+- pos_share = min(0.10 × 1.82, 0.5) = 0.182 (18.2%)
+- Compounding: position = 5000 × 0.182 = $910
+- Fixed: position = 1500 × 0.182 = $273
 
 ### Синхронизация сделок
 
@@ -215,10 +213,11 @@ PnL = proceeds - cost
 
 | Вариант | CAGR | maxDD | Win rate | Сделок |
 |---------|:----:|:-----:|:--------:|:------:|
-| Fixed | 47.0% | 17.3% | 52.6% | 2618 |
-| **Capped** | **79.1%** | **21.3%** | 52.6% | 2618 |
+| Fixed | 31.2% | 21.1% | 52.2% | 887 |
+| **Compounding** | **69.3%** | **26.3%** | 51.9% | 878 |
 
-Максимальная серия убытков: **9** подряд. Средняя: 1.9.
+Максимальная серия убытков: **8** подряд. Средняя: 1.9.
+Максимум одновременных позиций: **3**. Портфельное ограничение соблюдено.
 
 ## Исключенные сектора
 
