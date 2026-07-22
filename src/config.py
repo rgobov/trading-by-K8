@@ -36,8 +36,21 @@ BACKTEST_BUY_DAYS_BEFORE = 1
 CALC_MIN_QUARTERS = 4
 
 # Email notifications (mail.ru)
-SMTP_HOST = "smtp.mail.ru"
-SMTP_PORT = 465
-SMTP_USER = "mirus3000@mail.ru"
-SMTP_PASSWORD = ""  # вписать пароль приложения
-EMAIL_TO = "mirus3000@mail.ru"
+# Пароль читается из .env или переменной окружения
+def _load_env():
+    env_file = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_file):
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
+_load_env()
+
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.mail.ru")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER", "mirus3000@mail.ru")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+EMAIL_TO = os.getenv("EMAIL_TO", "mirus3000@mail.ru")
