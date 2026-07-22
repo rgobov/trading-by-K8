@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Daily runner: check earnings dates for today/tomorrow, send signals via email or Telegram"""
+"""Daily runner: check earnings dates for today/tomorrow, send signals via email"""
 import sys, os, smtplib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from src.config import DATA_PROCESSED, DATA_RAW
+from src.config import DATA_PROCESSED, DATA_RAW, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO
 from src.earnings_calendar import get_earnings_dates
 
 def send_email(subject: str, body: str):
-    host = os.getenv("SMTP_HOST", "")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER", "")
-    pwd = os.getenv("SMTP_PASSWORD", "")
-    to = os.getenv("EMAIL_TO", "")
+    host = SMTP_HOST
+    port = SMTP_PORT
+    user = SMTP_USER
+    pwd = SMTP_PASSWORD
+    to = EMAIL_TO
     if not all([host, user, pwd, to]):
+        print("Email config incomplete, skipping")
         return False
     msg = EmailMessage()
     msg["Subject"] = subject

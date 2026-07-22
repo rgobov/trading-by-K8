@@ -34,3 +34,10 @@ BACKTEST_HOLD_DAYS_AFTER = 1
 BACKTEST_BUY_DAYS_BEFORE = 1
 
 CALC_MIN_QUARTERS = 4
+
+# Email notifications (mail.ru)
+SMTP_HOST = "smtp.mail.ru"
+SMTP_PORT = 465
+SMTP_USER = "mirus3000@mail.ru"
+SMTP_PASSWORD = ""  # вписать пароль приложения
+EMAIL_TO = "mirus3000@mail.ru"
