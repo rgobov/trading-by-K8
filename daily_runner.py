@@ -22,10 +22,15 @@ def send_email(subject: str, body: str):
     msg["To"] = to
     msg.set_content(body)
     try:
-        with smtplib.SMTP(host, port) as s:
-            s.starttls()
-            s.login(user, pwd)
-            s.send_message(msg)
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port) as s:
+                s.login(user, pwd)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port) as s:
+                s.starttls()
+                s.login(user, pwd)
+                s.send_message(msg)
         return True
     except Exception as e:
         print(f"Email send failed: {e}")
