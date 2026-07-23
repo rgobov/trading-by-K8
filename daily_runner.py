@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Daily runner: SEC → K calc → filter → check earnings → portfolio → email + web signals"""
-import sys, os, json, smtplib, ssl
+"""Daily runner: SEC \u2192 K calc \u2192 filter \u2192 check earnings \u2192 portfolio \u2192 email + web signals"""
+import sys, os, json, smtplib, ssl, time
 from datetime import datetime, timedelta, date
 from email.message import EmailMessage
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +62,19 @@ tickers_df = pd.read_csv(f"{DATA_RAW}/sp500_tickers.csv")
 all_tickers = tickers_df["ticker"].tolist()
 sectors = load_sectors()
 
-# === 2. Parse SEC (incremental) ===
+# === 2. Refresh fundamentals if stale ===
+CANDIDATES_REFRESH_DAYS = 30
+refresh_all = False
+fund_files = [f for f in os.listdir(DATA_RAW) if f.endswith("_fundamentals.csv")]
+if fund_files:
+    oldest = min(os.path.getmtime(os.path.join(DATA_RAW, f)) for f in fund_files)
+    days_old = (time.time() - oldest) / 86400
+    if days_old > CANDIDATES_REFRESH_DAYS:
+        log(f"Fundamentals stale ({days_old:.0f}d), refreshing all...")
+        refresh_all = True
+        for f in fund_files:
+            os.remove(os.path.join(DATA_RAW, f))
+
 need_parse = [t for t in all_tickers if not os.path.exists(f"{DATA_RAW}/{t}_fundamentals.csv")]
 if need_parse:
     log(f"SEC: {len(need_parse)} new tickers")
