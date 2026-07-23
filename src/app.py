@@ -218,25 +218,17 @@ class TrackerApp:
 
         yield ft.Divider()
 
-        # BUY signals
-        yield ft.Text("🟢 BUY сигналы (сегодня)", size=18, weight="bold")
+        # BUY signals — показываем все из signals_data.json
+        yield ft.Text("🟢 BUY сигналы", size=18, weight="bold")
         cand = self.signals.get("candidates", [])
         if not cand:
-            yield ft.Text("Нет сигналов", italic=True, color="grey")
+            yield ft.Text("Нет сигналов. Нажми ⟳ Проверить сигналы", italic=True, color="grey")
         else:
             for s in cand:
                 pos_frac = min(0.33 * min(s.get("k", 1.1) / 1.1, 3.0), 0.50)
                 target_size = s.get("size", 0)
                 shares = s.get("shares", 0)
                 est_price = s.get("price", 0)
-                is_open = s.get("is_opened", False)
-                # Skip positions already opened
-                if is_open:
-                    continue
-                # Check if already in portfolio
-                existing = [p for p in self.portfolio.open_positions if p["ticker"] == s.get("ticker")]
-                if existing:
-                    continue
 
                 def make_buy(ticker, est_p, pos_frac, port):
                     def buy(e):
@@ -254,7 +246,13 @@ class TrackerApp:
                                 ft.ElevatedButton("✅ Купить", on_click=lambda e: confirm_buy(e, dlg, ticker, port, pos_frac, price_field)),
                             ],
                         )
-                        page.show_dialog(dlg)
+                        # Fallback for different Flet versions
+                        try:
+                            page.show_dialog(dlg)
+                        except:
+                            page.dialog = dlg
+                            dlg.open = True
+                            page.update()
                     return buy
 
                 def close_dlg(dlg, page):
