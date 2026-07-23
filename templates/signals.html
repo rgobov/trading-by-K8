@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"><title>ISTS Trading Signals</title>
+<style>
+body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #0d1117; color: #e6edf3; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin: 10px 0; }
+h2 { margin: 0 0 15px 0; font-size: 18px; color: #58a6ff; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+th { color: #8b949e; font-size: 13px; text-transform: uppercase; }
+.buy { color: #3fb950; font-weight: bold; }
+.sell { color: #f85149; font-weight: bold; }
+.open { color: #d29922; }
+input, button { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 8px 16px; border-radius: 6px; font-size: 14px; }
+button { background: #238636; cursor: pointer; }
+button:hover { background: #2ea043; }
+.summary { display: flex; gap: 20px; flex-wrap: wrap; }
+.summary-item { flex: 1; min-width: 120px; }
+.summary-item .label { font-size: 12px; color: #8b949e; }
+.summary-item .value { font-size: 24px; font-weight: bold; }
+.green { color: #3fb950; }
+.red { color: #f85149; }
+</style></head>
+<body>
+<h1>📊 ISTS Trading Signals</h1>
+<div class="card">
+  <div class="summary" id="summary">
+    <div class="summary-item"><div class="label">Портфель</div><div class="value" id="portfolioDisplay">$0</div></div>
+    <div class="summary-item"><div class="label">Свободно</div><div class="value green" id="freeDisplay">$0</div></div>
+    <div class="summary-item"><div class="label">Открыто</div><div class="value" id="openDisplay">0</div></div>
+    <div class="summary-item"><div class="label">Сделок всего</div><div class="value" id="tradesDisplay">0</div></div>
+    <div class="summary-item"><div class="label">PNL</div><div class="value" id="pnlDisplay">$0</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🟡 Открытые позиции</h2>
+  <table><thead><tr><th>Тикер</th><th>Цена</th><th>Шт</th><th>Стоимость</th><th>% портфеля</th></tr></thead>
+  <tbody id="openTable"></tbody></table>
+</div>
+
+<div class="card">
+  <h2>🟢 Сигналы BUY</h2>
+  <table><thead><tr><th>Тикер</th><th>K</th><th>% портфеля</th><th>$</th><th>Шт</th></tr></thead>
+  <tbody id="buyTable"></tbody></table>
+</div>
+
+<div class="card">
+  <h2>🔴 Сигналы SELL</h2>
+  <table><thead><tr><th>Тикер</th><th>Дата покупки</th><th>Цена покупки</th><th>Стоимость</th></tr></thead>
+  <tbody id="sellTable"></tbody></table>
+</div>
+
+<div class="card">
+  <h2>⚙️ Настройки</h2>
+  <label>Стоимость портфеля: $</label>
+  <input type="number" id="portfolioInput" value="100000" min="1000" step="1000">
+  <button onclick="recalc()">Пересчитать</button>
+</div>
+
+<script>
+const DATA = JSON.parse(document.getElementById('__DATA__')?.textContent || '{}');
+function fmt(n) { return Number(n || 0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+function fmt1(n) { return Number(n || 0).toLocaleString('en-US', {minimumFractionDigits:1, maximumFractionDigits:1}); }
+
+function recalc() {
+  const portfolio = Number(document.getElementById('portfolioInput').value) || 100000;
+  const signals = DATA.candidates || [];
+
+  let openHtml = '', buyHtml = '', sellHtml = '';
+  let openCost = 0, free = portfolio;
+
+  // Open positions (in portfolio state)
+  (DATA.open_positions || []).forEach(p => {
+    const pct = (p.cost / portfolio * 100).toFixed(1);
+    openHtml += `<tr><td>${p.ticker}</td><td>$${fmt(p.buy_price)}</td><td>${p.shares}</td><td>$${fmt(p.cost)}</td><td>${pct}%</td></tr>`;
+    openCost += p.cost;
+    free -= p.cost;
+  });
+
+  free = Math.max(0, free);
+
+  // BUY signals - calculate from free capital
+  (signals || []).forEach(s => {
+    const posFrac = Math.min(0.33 * Math.min(s.k / 1.1, 3.0), 0.50);
+    const size = portfolio * posFrac;
+    const shares = Math.floor(size / (s.price || 100));
+    buyHtml += `<tr><td class="buy">${s.ticker}</td><td>${fmt1(s.k)}</td><td>${(posFrac*100).toFixed(1)}%</td><td>$${fmt(Math.min(size, free))}</td><td>${shares}</td></tr>`;
+  });
+
+  // SELL signals (from open positions)
+  (DATA.sell_signals || []).forEach(s => {
+    sellHtml += `<tr><td class="sell">${s.ticker}</td><td>${s.buy_date || '-'}</td><td>$${fmt(s.buy_price || 0)}</td><td>$${fmt(s.cost || 0)}</td></tr>`;
+  });
+
+  if (!openHtml) openHtml = '<tr><td colspan="5" style="color:#8b949e">Нет открытых позиций</td></tr>';
+  if (!buyHtml) buyHtml = '<tr><td colspan="5" style="color:#8b949e">Нет сигналов на сегодня</td></tr>';
+  if (!sellHtml) sellHtml = '<tr><td colspan="4" style="color:#8b949e">Нет сигналов на продажу</td></tr>';
+
+  document.getElementById('openTable').innerHTML = openHtml;
+  document.getElementById('buyTable').innerHTML = buyHtml;
+  document.getElementById('sellTable').innerHTML = sellHtml;
+  document.getElementById('portfolioDisplay').textContent = '$' + fmt(portfolio);
+  document.getElementById('freeDisplay').textContent = '$' + fmt(free);
+  document.getElementById('openDisplay').textContent = DATA.open_positions?.length || 0;
+  document.getElementById('tradesDisplay').textContent = DATA.completed_trades || 0;
+  
+  const pnl = DATA.pnl_total || 0;
+  const pnlEl = document.getElementById('pnlDisplay');
+  pnlEl.textContent = '$' + fmt(Math.abs(pnl));
+  pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+}
+
+const script = document.getElementById('__DATA__');
+if (script) { Object.assign(DATA, JSON.parse(script.textContent)); recalc(); }
+recalc();
+</script>
+</body></html>

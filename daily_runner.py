@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Daily runner: SEC → K calc → filter candidates → check earnings → send email signals"""
-import sys, os, json, smtplib, time
-from datetime import datetime, timedelta
+"""Daily runner: SEC → K calc → filter → check earnings → portfolio → email + web signals"""
+import sys, os, json, smtplib, ssl
+from datetime import datetime, timedelta, date
 from email.message import EmailMessage
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pandas as pd
+
 from src.config import (
     DATA_RAW, DATA_PROCESSED, OUTPUT_DIR,
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO,
     FILTER_EXCLUDE_SECTORS, FILTER_K_THRESHOLD,
 )
-from src.edgar_parser import get_fundamentals, get_ticker_to_cik
-from src.calculator import calc_k_for_ticker
-from src.filter import filter_by_k_stability
-from src.earnings_calendar import get_earnings_dates
+from src.portfolio import Portfolio
+from src.edgar_parser import get_ticker_to_cik
 
 os.makedirs(DATA_RAW, exist_ok=True)
 os.makedirs(DATA_PROCESSED, exist_ok=True)
@@ -30,54 +27,45 @@ def log(msg):
 def send_email(subject: str, body: str):
     if not all([SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_TO]):
         log("Email config incomplete")
-        return False
+        return
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = SMTP_USER
     msg["To"] = EMAIL_TO
     msg.set_content(body)
-    import ssl
     try:
         ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
             s.login(SMTP_USER, SMTP_PASSWORD)
             s.send_message(msg)
-        return True
+        log("Email sent")
     except Exception as e:
         log(f"Email error: {e}")
-        return False
 
-# === 1. Load S&P 500 tickers ===
+def load_sectors() -> dict:
+    path = f"{DATA_RAW}/ticker_sectors.json"
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+import pandas as pd
+import yfinance as yf
+from src.edgar_parser import get_fundamentals
+from src.calculator import calc_k_for_ticker
+from src.filter import filter_by_k_stability, load_ticker_k
+from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
+
+# === 1. Load tickers ===
 log("Loading tickers...")
 tickers_df = pd.read_csv(f"{DATA_RAW}/sp500_tickers.csv")
 all_tickers = tickers_df["ticker"].tolist()
-log(f"  {len(all_tickers)} tickers")
+sectors = load_sectors()
 
-# === 2. Get sector info (cached) ===
-sectors_path = f"{DATA_RAW}/ticker_sectors.json"
-if os.path.exists(sectors_path):
-    with open(sectors_path) as f:
-        sectors = json.load(f)
-else:
-    log("  Fetching sectors from yfinance...")
-    import yfinance as yf
-    sectors = {}
-    for t in all_tickers:
-        try:
-            info = yf.Ticker(t).info
-            sectors[t] = info.get("sector", "")
-        except:
-            sectors[t] = ""
-        time.sleep(0.02)
-    with open(sectors_path, "w") as f:
-        json.dump(sectors, f)
-    log(f"  Cached {len(sectors)} sectors")
-
-# === 3. Parse SEC fundamentals (incremental) ===
-log("Parsing SEC fundamentals (incremental)...")
+# === 2. Parse SEC (incremental) ===
 need_parse = [t for t in all_tickers if not os.path.exists(f"{DATA_RAW}/{t}_fundamentals.csv")]
 if need_parse:
-    log(f"  Need to parse: {len(need_parse)}")
+    log(f"SEC: {len(need_parse)} new tickers")
     for t in need_parse:
         try:
             df = get_fundamentals(t)
@@ -85,64 +73,138 @@ if need_parse:
                 df.to_csv(f"{DATA_RAW}/{t}_fundamentals.csv", index=False)
         except:
             pass
-        time.sleep(0.12)
-parsed = len([f for f in os.listdir(DATA_RAW) if f.endswith("_fundamentals.csv")])
-log(f"  Parsed: {parsed}/{len(all_tickers)}")
 
-# === 4. Calculate K (incremental) ===
-log("Calculating K...")
+# === 3. Calculate K ===
 rows = []
-for t in all_tickers:
-    path = f"{DATA_RAW}/{t}_fundamentals.csv"
-    if not os.path.exists(path):
-        continue
-    result = calc_k_for_ticker(t)
-    if "error" not in result:
-        qs = result.get("quarters", [])
-        rows.append({"ticker": t, "avg_K": result.get("avg_K", 0),
+import glob
+for f in glob.glob(f"{DATA_RAW}/*_fundamentals.csv"):
+    t = os.path.basename(f).replace("_fundamentals.csv", "")
+    r = calc_k_for_ticker(t)
+    if "error" not in r:
+        qs = r.get("quarters", [])
+        rows.append({"ticker": t, "avg_K": r.get("avg_K", 0),
                      "latest_K": qs[-1]["K"] if qs else 0, "qcount": len(qs)})
 
 df_k = pd.DataFrame(rows).sort_values("avg_K", ascending=False)
 df_k.to_csv(f"{DATA_PROCESSED}/all_K_ratings.csv", index=False)
-log(f"  {len(df_k)} K ratings")
 
-# === 5. Filter candidates ===
-log("Filtering candidates...")
+# === 4. Filter ===
 df_f = filter_by_k_stability(df_k, threshold=FILTER_K_THRESHOLD, min_above=2, lookback=3)
 df_f["sector"] = df_f["ticker"].map(sectors)
 df_f = df_f[~df_f["sector"].isin(FILTER_EXCLUDE_SECTORS)]
 df_f = df_f[df_f["sector"].notna() & (df_f["sector"] != "")]
 df_f.to_csv(f"{DATA_PROCESSED}/filtered_candidates.csv", index=False)
-log(f"  {len(df_f)} candidates")
+log(f"Candidates: {len(df_f)}")
 
-# === 6. Check earnings dates ===
-log("Checking earnings dates...")
+# === 5. Check earnings dates ===
 candidates = df_f["ticker"].tolist()
 df_earnings = get_earnings_dates(candidates)
-today = datetime.now().date()
+today = date.today()
 tomorrow = today + timedelta(days=1)
 
-signals_buy = []
-signals_sell = []
+buy_signals = []
+sell_signals = []
 for _, row in df_earnings.iterrows():
     ed = row["date"]
     if isinstance(ed, str):
         ed = datetime.strptime(ed[:10], "%Y-%m-%d").date()
     if ed == today:
-        signals_buy.append(row["ticker"])
+        buy_signals.append(row["ticker"])
     elif ed == tomorrow:
-        signals_buy.append(row["ticker"])
+        buy_signals.append(row["ticker"])
 
-if not signals_buy:
-    msg = f"ISTS: No earnings today ({today})."
-    log(msg)
-    send_email("ISTS Trading Signals", msg)
+# === 6. Load portfolio ===
+portfolio = Portfolio(initial_capital=1500)
+summary = portfolio.summary()
+
+# Determine which open positions should be sold (earnings already passed)
+sells_to_close = []
+for pos in portfolio.open_positions:
+    t = pos["ticker"]
+    for _, row in df_earnings.iterrows():
+        ed = row["date"]
+        if isinstance(ed, str):
+            ed = datetime.strptime(ed[:10], "%Y-%m-%d").date()
+        if row["ticker"] == t and ed <= today:
+            sells_to_close.append((t, ed))
+
+# Close sold positions (using today's close as approximation)
+for ticker, _ in sells_to_close:
+    df_price = yf.download(ticker, period="2d", progress=False)
+    if not df_price.empty:
+        close = float(df_price["Close"].iloc[-1])
+        pos = portfolio.close_trade(ticker, close)
+        if "pnl" in pos:
+            log(f"Closed {ticker}: PnL=${pos['pnl']:.0f}")
+
+# Open buy signals
+signals_data = []
+for t in buy_signals:
+    k_row = df_k[df_k["ticker"] == t]
+    if k_row.empty:
+        continue
+    k = float(k_row["avg_K"].iloc[0])
+    df_price = yf.download(t, period="2d", progress=False)
+    if df_price.empty:
+        continue
+    price = float(df_price["Close"].iloc[-1])
+    pos = portfolio.open_trade(t, k, price)
+    if pos["shares"] > 0:
+        log(f"BUY {t}: ${pos['cost']:.0f} ({pos['shares']} шт)")
+    signals_data.append({
+        "ticker": t,
+        "k": round(k, 2),
+        "price": round(price, 2),
+        "size": round(pos["cost"], 0) if pos["shares"] > 0 else 0,
+        "shares": pos["shares"],
+    })
+
+summary = portfolio.summary()
+
+# === 7. Generate email ===
+lines = [f"📊 ISTS Signals — {today}"]
+lines.append(f"Портфель: ${summary['current_capital']:,.0f}")
+lines.append(f"Свободно: ${summary['free_capital']:,.0f}")
+lines.append("─" * 30)
+if portfolio.open_positions:
+    lines.append("")
+    lines.append("🟡 Открыто:")
+    for p in portfolio.open_positions:
+        lines.append(f"  {p['ticker']} ${p['cost']:,.0f} ({p['shares']} шт)")
+if sells_to_close:
+    lines.append("")
+    lines.append("🔴 SELL:")
+    for t, ed in sells_to_close:
+        lines.append(f"  {t}")
+if signals_data:
+    lines.append("")
+    lines.append("🟢 BUY:")
+    for s in signals_data:
+        if s["shares"] > 0:
+            lines.append(f"  {s['ticker']} K={s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
 else:
-    lines = [f"ISTS Signals — {today}", "=" * 40,
-             f"BUY before close ({len(signals_buy)}):", ", ".join(signals_buy),
-             "", f"Positions: 33% + K-weight, max 3 concurrent"]
-    msg = "\n".join(lines)
-    log(msg)
-    send_email(f"ISTS: {len(signals_buy)} trades today", msg)
+    lines.append("")
+    lines.append("Сигналов нет")
+lines.append("─" * 30)
+msg = "\n".join(lines)
+log(msg)
+send_email(f"ISTS: {len(signals_data)} trades today" if signals_data else "ISTS: no trades", msg)
 
+# === 8. Generate signals.html ===
+web_data = {
+    "candidates": signals_data,
+    "open_positions": portfolio.open_positions,
+    "sell_signals": [portfolio.find_open(t) for t, _ in sells_to_close],
+    "completed_trades": len(portfolio.completed_trades),
+    "pnl_total": summary["pnl_total"],
+}
+
+html_path = f"{OUTPUT_DIR}/signals.html"
+with open("templates/signals.html") as f:
+    html = f.read()
+html = html.replace('const DATA = JSON.parse(document.getElementById(\'__DATA__\')?.textContent || \'{}\');',
+                    f'const DATA = {json.dumps(web_data)};')
+with open(html_path, "w") as f:
+    f.write(html)
+log(f"Signals HTML -> {html_path}")
 log("Done")
