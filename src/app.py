@@ -1,5 +1,6 @@
 """Desktop app for ISTS portfolio tracking"""
-import json, os, sys
+import json, os, sys, subprocess
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import flet as ft
@@ -14,12 +15,44 @@ class TrackerApp:
     def __init__(self):
         self.portfolio = Portfolio(initial_capital=1500)
         self.signals = {"candidates": [], "sell_signals": []}
+        self.last_check = self._get_check_time()
         self._load_signals()
 
     def _load_signals(self):
         if os.path.exists(SIGNALS_PATH):
             with open(SIGNALS_PATH) as f:
                 self.signals = json.load(f)
+
+    def _get_check_time(self) -> str:
+        if os.path.exists(SIGNALS_PATH):
+            ts = os.path.getmtime(SIGNALS_PATH)
+            return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
+        return "никогда"
+
+    def check_signals(self, page):
+        page.snack_bar = ft.SnackBar(ft.Text("Проверка сигналов..."))
+        page.snack_bar.open = True
+        page.update()
+        try:
+            import subprocess
+            subprocess.run(
+                [sys.executable, "daily_runner.py"],
+                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                capture_output=True, text=True, timeout=600,
+            )
+            self._load_signals()
+            self.last_check = self._get_check_time()
+            page.snack_bar = ft.SnackBar(ft.Text("Готово"))
+            page.snack_bar.open = True
+        except subprocess.TimeoutExpired:
+            page.snack_bar = ft.SnackBar(ft.Text("Тайм-аут (10 мин)"), bgcolor="red")
+            page.snack_bar.open = True
+        except Exception as ex:
+            page.snack_bar = ft.SnackBar(ft.Text(f"Ошибка: {ex}"), bgcolor="red")
+            page.snack_bar.open = True
+        page.controls.clear()
+        page.controls.extend(self._build_rows(page))
+        page.update()
 
     def _save_portfolio(self):
         self.portfolio.save()
@@ -222,6 +255,12 @@ class TrackerApp:
             page.update()
 
         yield ft.Divider()
+        yield ft.Row([
+            ft.ElevatedButton("⟳ Проверить сигналы",
+                              on_click=lambda e: self.check_signals(page),
+                              bgcolor="blue", color="white", icon="refresh"),
+            ft.Text(f"Последняя проверка: {self.last_check}", size=12, color="grey"),
+        ])
         yield ft.Row([
             ft.Text("Портфель: $"),
             capital_input,
