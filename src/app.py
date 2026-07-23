@@ -300,15 +300,21 @@ class TrackerApp:
                     page.dialog = None
                     page.update()
 
+                is_bmo = s.get("is_amc", True) == False and s.get("when") == "today"
+                note = s.get("note", "")
+                btn_color = "grey" if is_bmo else "green"
+                btn_text = "BMO ⛔" if is_bmo else "➕ Купить"
                 yield ft.Row([
-                    ft.Text(s.get("ticker", ""), width=80, weight="bold", color="green"),
+                    ft.Text(s.get("ticker", ""), width=80, weight="bold",
+                            color="orange" if is_bmo else "green"),
                     ft.Text(f"K={s.get('k',0):.2f}", width=80),
                     ft.Text(f"${target_size:,.0f}" if target_size else "-", width=100),
-                    ft.Text(f"≈{shares} шт" if shares else "-", width=80),
-                    ft.ElevatedButton("➕ Купить",
+                    ft.Text(f"≈{shares} шт" if shares else "-", width=70),
+                    ft.Text(note, width=200, size=11, color="orange" if is_bmo else "grey"),
+                    ft.ElevatedButton(btn_text,
                         on_click=make_buy(s.get("ticker",""), est_price, pos_frac,
-                                          self.portfolio.current_capital),
-                        bgcolor="green", color="white"),
+                                          self.portfolio.current_capital) if not is_bmo else None,
+                        bgcolor=btn_color, color="white", disabled=is_bmo),
                 ])
 
         yield ft.Divider()

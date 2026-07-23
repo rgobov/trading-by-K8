@@ -102,7 +102,7 @@ df_earnings = get_earnings_dates(candidates)
 today = date.today()
 tomorrow = today + timedelta(days=1)
 
-buy_signals = []
+collect_signals = []
 for _, row in df_earnings.iterrows():
     ed = row["date"]
     if isinstance(ed, str):
@@ -111,10 +111,10 @@ for _, row in df_earnings.iterrows():
     is_amc = True
     if dt is not None and hasattr(dt, 'hour'):
         is_amc = dt.hour >= 15
-    if ed == today and is_amc:
-        buy_signals.append(row["ticker"])
+    if ed == today:
+        collect_signals.append((row["ticker"], is_amc, "today"))
     elif ed == tomorrow:
-        buy_signals.append(row["ticker"])
+        collect_signals.append((row["ticker"], is_amc, "tomorrow"))
 
 # === 6. Load portfolio ===
 portfolio = Portfolio(initial_capital=1500)
@@ -123,8 +123,9 @@ summary = portfolio.summary()
 # Open buy signals (generate only — purchase via app button)
 signals_data = []
 max_concurrent = 3
-for t in buy_signals:
-    # Load K and price FIRST (before any checks)
+note_text = ""
+open_count = len(portfolio.open_positions)
+for t, is_amc, when in collect_signals:
     k_row = df_k[df_k["ticker"] == t]
     if k_row.empty:
         continue
@@ -134,12 +135,18 @@ for t in buy_signals:
         continue
     price = float(df_price["Close"].iloc[-1])
 
-    open_count = len([p for p in portfolio.open_positions])
     capital = portfolio.current_capital
     free = portfolio.free_capital()
     pos_frac = min(0.33 * min(k / 1.1, 3.0), 0.50)
     target_size = capital * pos_frac
     shares = int(min(target_size, free) / price)
+
+    note_parts = []
+    if open_count >= max_concurrent:
+        note_parts.append("лимит 3 поз.")
+    if not is_amc and when == "today":
+        note_parts.append("BMO — нужно вчера")
+    note = ", ".join(note_parts)
 
     signals_data.append({
         "ticker": t,
@@ -148,10 +155,12 @@ for t in buy_signals:
         "size": round(target_size, 0),
         "shares": shares,
         "is_opened": False,
-        "note": "" if open_count < max_concurrent else "max_concurrent",
+        "is_amc": is_amc,
+        "when": when,
+        "note": note,
     })
-    if open_count >= max_concurrent:
-        log(f"SIGNAL {t}: K={k:.2f} size=${target_size:,.0f} (LIMIT {max_concurrent} pos)")
+    if note:
+        log(f"SIGNAL {t}: {note} (K={k:.2f})")
     else:
         log(f"SIGNAL {t}: K={k:.2f} size=${target_size:,.0f} {shares}шт")
 
