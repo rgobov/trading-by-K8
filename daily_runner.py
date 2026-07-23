@@ -125,7 +125,9 @@ portfolio = Portfolio(initial_capital=1500)
 summary = portfolio.summary()
 
 # Open buy signals (generate only — purchase via app button)
-signals_data = []
+signals_today = []
+signals_tomorrow = []
+signals_missed = []
 max_concurrent = 3
 open_count = len(portfolio.open_positions)
 for t, is_amc, when, report_date in collect_signals:
@@ -144,27 +146,24 @@ for t, is_amc, when, report_date in collect_signals:
     target_size = capital * pos_frac
     shares = int(min(target_size, free) / price)
 
-    note_parts = []
+    is_missed = (when == "сегодня" and not is_amc)
+    action = "пропущен" if is_missed else f"покупка {when}"
+    note = ""
     if open_count >= max_concurrent:
-        note_parts.append("лимит 3 поз.")
-    if when == "сегодня" and not is_amc:
-        note_parts.append(f"BMO — пропущен (был сегодня в {report_date})")
-    action = "пропущен" if (when == "сегодня" and not is_amc) else f"покупка {when}"
+        note = "лимит 3 поз."
+    if is_missed:
+        note = f"BMO — был сегодня"
+        signals_missed.append({"ticker": t, "k": round(k,2), "price": round(price,2),
+                               "size": round(target_size,0), "shares": shares, "action": action, "note": note})
+    elif when == "сегодня":
+        signals_today.append({"ticker": t, "k": round(k,2), "price": round(price,2),
+                              "size": round(target_size,0), "shares": shares, "action": action, "note": note})
+    else:
+        signals_tomorrow.append({"ticker": t, "k": round(k,2), "price": round(price,2),
+                                 "size": round(target_size,0), "shares": shares, "action": action, "note": note})
+    log(f"SIGNAL {t}: {action} (K={k:.2f})" + (f" — {note}" if note else ""))
 
-    signals_data.append({
-        "ticker": t,
-        "k": round(k, 2),
-        "price": round(price, 2),
-        "size": round(target_size, 0),
-        "shares": shares,
-        "is_opened": False,
-        "is_amc": is_amc,
-        "when": when,
-        "report_date": str(report_date),
-        "action": action,
-        "note": ", ".join(note_parts),
-    })
-    log(f"SIGNAL {t}: {action} (K={k:.2f}){', '+note_parts[0] if note_parts else ''}")
+signals_data = signals_today + signals_tomorrow + signals_missed
 
 summary = portfolio.summary()
 
@@ -178,20 +177,21 @@ if portfolio.open_positions:
     lines.append("🟡 Открыто:")
     for p in portfolio.open_positions:
         lines.append(f"  {p['ticker']} ${p['cost']:,.0f} ({p['shares']} шт)")
-if signals_data:
+if signals_today or signals_tomorrow:
     lines.append("")
-    lines.append("🟢 Сигналы:")
-    for s in signals_data:
-        act = s.get("action", "")
-        note = s.get("note", "")
-        extra = f" ({note})" if note else ""
-        if "пропущен" in act:
-            continue  # skip missed in email
-        lines.append(f"  {s['ticker']} {s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
-    # Check if only missed signals
-    active = [s for s in signals_data if "пропущен" not in s.get("action","")]
-    if not active and signals_data:
-        lines.append("  (все сегодняшние BMO пропущены)")
+    if signals_today:
+        lines.append("🟢 Сегодня (AMC):")
+        for s in signals_today:
+            lines.append(f"  {s['ticker']} K={s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
+    if signals_tomorrow:
+        lines.append("🟡 Завтра:")
+        for s in signals_tomorrow:
+            lines.append(f"  {s['ticker']} K={s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
+    if signals_missed and not signals_today and not signals_tomorrow:
+        lines.append(f"  ({len(signals_missed)} BMO сегодня — пропущены)")
+elif signals_missed:
+    lines.append("")
+    lines.append(f"  {len(signals_missed)} BMO сегодня — пропущены")
 else:
     lines.append("")
     lines.append("Сигналов нет")
@@ -202,9 +202,10 @@ send_email(f"ISTS: {len(signals_data)} trades today" if signals_data else "ISTS:
 
 # === 8. Save signals data for app + generate html ===
 web_data = {
-    "candidates": signals_data,
+    "today": signals_today,
+    "tomorrow": signals_tomorrow,
+    "missed": signals_missed,
     "open_positions": portfolio.open_positions,
-    "sell_signals": [],
     "completed_trades": len(portfolio.completed_trades),
     "pnl_total": summary["pnl_total"],
 }

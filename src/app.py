@@ -218,9 +218,33 @@ class TrackerApp:
 
         yield ft.Divider()
 
-        # BUY signals — показываем все из signals_data.json
-        yield ft.Text("🟢 BUY сигналы", size=18, weight="bold")
-        cand = self.signals.get("candidates", [])
+        # BUY signals — три раздела
+        for section_title, color, key, is_missed in [
+            ("🟢 Сегодня (AMC)", "green", "today", False),
+            ("🟡 Завтра", "yellow", "tomorrow", False),
+            ("🔴 Пропущено (BMO)", "red", "missed", True),
+        ]:
+            yield ft.Text(section_title, size=18, weight="bold", color=color)
+            lst = self.signals.get(key, [])
+            if not lst:
+                yield ft.Text("Нет сигналов", italic=True, color="grey")
+                continue
+            for s in lst:
+                target_size = s.get("size", 0)
+                shares = s.get("shares", 0)
+                est_price = s.get("price", 0)
+                note = s.get("note", "")
+                pos_frac = min(0.33 * min(s.get("k", 1.1) / 1.1, 3.0), 0.50)
+                btn_color = "grey" if is_missed else "green"
+                btn_text = "⛔ Пропущен" if is_missed else "➕ Купить"
+                yield ft.Row([
+                    ft.Text(s.get("ticker", ""), width=80, weight="bold", color="orange" if is_missed else "green"),
+                    ft.Text(f"K={s.get('k',0):.2f}", width=80),
+                    ft.Text(f"${target_size:,.0f}" if target_size else "-", width=100),
+                    ft.Text(f"≈{shares} шт" if shares else "-", width=70),
+                    ft.Text(note, width=200, size=11, color="orange"),
+                    ft.ElevatedButton(btn_text, on_click=None, bgcolor=btn_color, color="white", disabled=is_missed),
+                ])
         if not cand:
             yield ft.Text("Нет сигналов. Нажми ⟳ Проверить сигналы", italic=True, color="grey")
         else:
@@ -319,20 +343,7 @@ class TrackerApp:
                         bgcolor=btn_color, color="white", disabled=is_missed),
                 ])
 
-        yield ft.Divider()
 
-        # SELL signals
-        yield ft.Text("🔴 SELL сигналы (сегодня)", size=18, weight="bold")
-        sells = self.signals.get("sell_signals", [])
-        if not sells:
-            yield ft.Text("Нет сигналов", italic=True, color="grey")
-        else:
-            for s in sells:
-                yield ft.Row([
-                    ft.Text(s.get("ticker", ""), width=80, weight="bold", color="red"),
-                    ft.Text(f"Куплен {s.get('buy_date','-')}", width=150),
-                    ft.Text(f"${s.get('buy_price',0):.0f}", width=80),
-                ])
 
         yield ft.Divider()
 
