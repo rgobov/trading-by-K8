@@ -190,7 +190,7 @@ msg = "\n".join(lines)
 log(msg)
 send_email(f"ISTS: {len(signals_data)} trades today" if signals_data else "ISTS: no trades", msg)
 
-# === 8. Generate signals.html ===
+# === 8. Save signals data for app + generate html ===
 web_data = {
     "candidates": signals_data,
     "open_positions": portfolio.open_positions,
@@ -199,11 +199,16 @@ web_data = {
     "pnl_total": summary["pnl_total"],
 }
 
+signals_json_path = f"{OUTPUT_DIR}/signals_data.json"
+with open(signals_json_path, "w") as f:
+    json.dump(web_data, f, indent=2)
+log(f"Signals data -> {signals_json_path}")
+
 html_path = f"{OUTPUT_DIR}/signals.html"
 with open("templates/signals.html") as f:
     html = f.read()
-html = html.replace('const DATA = JSON.parse(document.getElementById(\'__DATA__\')?.textContent || \'{}\');',
-                    f'const DATA = {json.dumps(web_data)};')
+html = html.replace("const INIT_DATA = JSON.parse(document.getElementById('__DATA__')?.textContent || '{}');",
+                    f"const INIT_DATA = {json.dumps(web_data)};")
 with open(html_path, "w") as f:
     f.write(html)
 log(f"Signals HTML -> {html_path}")
