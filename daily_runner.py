@@ -112,8 +112,8 @@ for _, row in df_earnings.iterrows():
     if dt is not None and hasattr(dt, 'hour'):
         is_amc = dt.hour >= 15
 
-    # Today (AMC only) or next trading day (any)
-    if ed == today and is_amc:
+    # Today (AMC или BMO) или следующий торговый день
+    if ed == today:
         collect_signals.append((row["ticker"], is_amc, "сегодня", ed))
     elif ed == next_trade_day:
         days_off = (ed - today).days
