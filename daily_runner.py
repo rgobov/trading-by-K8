@@ -108,10 +108,15 @@ for _, row in df_earnings.iterrows():
     ed = row["date"]
     if isinstance(ed, str):
         ed = datetime.strptime(ed[:10], "%Y-%m-%d").date()
+    dt = pd.to_datetime(row["datetime"]) if "datetime" in row and pd.notna(row.get("datetime")) else None
+    is_amc = True
+    if dt is not None and hasattr(dt, 'hour'):
+        is_amc = dt.hour >= 15  # 15:00+ ET = after close
     if ed == today:
-        buy_signals.append(row["ticker"])
+        if is_amc:
+            buy_signals.append(row["ticker"])  # AMC: покупаем сегодня
     elif ed == tomorrow:
-        buy_signals.append(row["ticker"])
+        buy_signals.append(row["ticker"])      # завтра AMC: покупаем сегодня
 
 # === 6. Load portfolio ===
 portfolio = Portfolio(initial_capital=1500)
