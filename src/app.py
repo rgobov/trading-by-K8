@@ -250,12 +250,16 @@ class TrackerApp:
                                 price_field,
                             ], tight=True, spacing=10),
                             actions=[
-                                ft.TextButton("Отмена", on_click=lambda e: page.close(dlg)),
+                                ft.TextButton("Отмена", on_click=lambda e: close_dlg(dlg, page)),
                                 ft.ElevatedButton("✅ Купить", on_click=lambda e: confirm_buy(e, dlg, ticker, port, pos_frac, price_field)),
                             ],
                         )
                         page.show_dialog(dlg)
                     return buy
+
+                def close_dlg(dlg, page):
+                    dlg.open = False
+                    page.update()
 
                 def confirm_buy(e, dlg, ticker, port, pos_frac, price_field):
                     try:
@@ -289,7 +293,8 @@ class TrackerApp:
                     })
                     self.portfolio.current_capital -= cost
                     self.portfolio.save()
-                    page.close(dlg)
+                    dlg.open = False
+                    page.update()
                     page.controls.clear()
                     page.controls.extend(self._build_rows(page))
                     page.update()
