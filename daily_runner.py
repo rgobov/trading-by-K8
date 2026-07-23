@@ -1,6 +1,27 @@
 #!/usr/bin/env python3
 """Daily runner: SEC \u2192 K calc \u2192 filter \u2192 check earnings \u2192 portfolio \u2192 email + web signals"""
-import sys, os, json, smtplib, ssl, time
+import sys, os, json, smtplib, ssl, time, traceback
+
+# Global exception handler — sends email on any unhandled error
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    err = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    msg = f"ISTS: UNHANDLED ERROR in daily_runner\n\n{err}"
+    print(msg)
+    try:
+        from src.config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO
+        if all([SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_TO]):
+            from email.message import EmailMessage
+            m = EmailMessage()
+            m["Subject"] = "ISTS: CRITICAL ERROR"
+            m["From"] = SMTP_USER; m["To"] = EMAIL_TO
+            m.set_content(msg)
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as s:
+                s.login(SMTP_USER, SMTP_PASSWORD)
+                s.send_message(m)
+    except:
+        pass
+
+sys.excepthook = _global_excepthook
 from datetime import datetime, timedelta, date
 from email.message import EmailMessage
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -9,6 +30,7 @@ from src.config import (
     DATA_RAW, DATA_PROCESSED, OUTPUT_DIR,
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_TO,
     FILTER_EXCLUDE_SECTORS, FILTER_K_THRESHOLD,
+    CANDIDATES_REFRESH_DAYS,
 )
 from src.portfolio import Portfolio
 from src.edgar_parser import get_ticker_to_cik
@@ -63,7 +85,6 @@ all_tickers = tickers_df["ticker"].tolist()
 sectors = load_sectors()
 
 # === 2. Refresh fundamentals if stale ===
-CANDIDATES_REFRESH_DAYS = 30
 refresh_all = False
 fund_files = [f for f in os.listdir(DATA_RAW) if f.endswith("_fundamentals.csv")]
 if fund_files:
@@ -235,4 +256,14 @@ html = html.replace("const INIT_DATA = JSON.parse(document.getElementById('__DAT
 with open(html_path, "w") as f:
     f.write(html)
 log(f"Signals HTML -> {html_path}")
+
+# Notify if candidates were refreshed
+if refresh_all:
+    try:
+        import pandas as pd
+        df = pd.read_csv(f"{DATA_PROCESSED}/filtered_candidates.csv")
+        send_email("ISTS: Candidates refreshed", f"New candidates: {len(df)}\\nFilter: K>1.1 + sector exclusion\\nNext refresh in 15 days")
+    except Exception as notify_err:
+        log(f"Notification error: {notify_err}")
+
 log("Done")
