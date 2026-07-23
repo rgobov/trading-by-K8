@@ -130,27 +130,34 @@ for pos in portfolio.open_positions:
 
 # Close sold positions (using today's close as approximation)
 for ticker, _ in sells_to_close:
-    df_price = yf.download(ticker, period="2d", progress=False)
+    df_price = yf.Ticker(ticker).history(period="5d")
     if not df_price.empty:
         close = float(df_price["Close"].iloc[-1])
         pos = portfolio.close_trade(ticker, close)
         if "pnl" in pos:
             log(f"Closed {ticker}: PnL=${pos['pnl']:.0f}")
 
-# Open buy signals
+# Open buy signals (max 3 concurrent, check available capital)
 signals_data = []
+max_concurrent = 3
 for t in buy_signals:
+    if len([p for p in portfolio.open_positions]) >= max_concurrent:
+        log(f"SKIP {t}: max {max_concurrent} concurrent positions")
+        signals_data.append({"ticker": t, "k": 0, "price": 0, "size": 0, "shares": 0, "note": "max_concurrent"})
+        continue
     k_row = df_k[df_k["ticker"] == t]
     if k_row.empty:
         continue
     k = float(k_row["avg_K"].iloc[0])
-    df_price = yf.download(t, period="2d", progress=False)
+    df_price = yf.Ticker(t).history(period="3d")
     if df_price.empty:
         continue
     price = float(df_price["Close"].iloc[-1])
     pos = portfolio.open_trade(t, k, price)
     if pos["shares"] > 0:
         log(f"BUY {t}: ${pos['cost']:.0f} ({pos['shares']} шт)")
+    else:
+        log(f"SKIP {t}: {pos.get('note', 'insufficient capital')}")
     signals_data.append({
         "ticker": t,
         "k": round(k, 2),

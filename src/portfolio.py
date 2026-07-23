@@ -59,9 +59,14 @@ class Portfolio:
 
     def open_trade(self, ticker: str, k_value: float, buy_price: float,
                    base_share: float = 0.33, pos_frac_max: float = 0.50) -> dict:
-        """Open a new position, deduct from capital"""
+        """Open a new position, deduct from capital. Checks free capital."""
         pos = self.calc_position(ticker, k_value, buy_price, base_share, pos_frac_max)
-        if pos["shares"] < 1 or pos["cost"] > self.current_capital:
+        if pos["shares"] < 1:
+            return pos
+        free = self.free_capital()
+        if pos["cost"] > free:
+            pos["shares"] = 0
+            pos["note"] = f"need ${pos['cost']:.0f}, free ${free:.0f}"
             return pos
         self.current_capital -= pos["cost"]
         pos["buy_date"] = str(date.today())

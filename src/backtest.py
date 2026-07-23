@@ -64,6 +64,9 @@ class Backtest:
         print(f"  Cached {len(self._price_cache)} tickers")
 
         df_earnings = get_earnings_dates(all_tickers)
+        # Backtest uses only confirmed (non-estimated) earnings dates
+        if "is_estimated" in df_earnings.columns:
+            df_earnings = df_earnings[df_earnings["is_estimated"] == False]
 
         # === Build all potential trades ===
         raw_trades = []

@@ -20,17 +20,19 @@ def _get_actual_dates_yfinance(ticker: str) -> list[dict]:
         ed = tk.earnings_dates
         if ed is None or ed.empty:
             return results
-        ed_actual = ed.dropna(subset=["Reported EPS"])
-        for idx, row in ed_actual.iterrows():
+        for idx, row in ed.iterrows():
             if pd.isna(idx):
                 continue
             dt = idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else idx
+            reported_eps = row.get("Reported EPS", None)
             surprise = row.get("Surprise(%)", None)
+            is_estimated = pd.isna(reported_eps)
             results.append({
                 "ticker": ticker,
                 "date": dt.date() if hasattr(dt, 'date') else dt,
                 "datetime": dt,
                 "surprise_pct": surprise if pd.notna(surprise) else None,
+                "is_estimated": is_estimated,
                 "source": "yfinance",
             })
     except Exception:
