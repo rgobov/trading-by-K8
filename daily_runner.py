@@ -54,7 +54,7 @@ import yfinance as yf
 from src.edgar_parser import get_fundamentals
 from src.calculator import calc_k_for_ticker
 from src.filter import filter_by_k_stability, load_ticker_k
-from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
+from src.earnings_calendar import get_earnings_dates, next_trading_day
 
 # === 1. Load tickers ===
 log("Loading tickers...")
@@ -100,7 +100,7 @@ log(f"Candidates: {len(df_f)}")
 candidates = df_f["ticker"].tolist()
 df_earnings = get_earnings_dates(candidates)
 today = date.today()
-tomorrow = today + timedelta(days=1)
+next_trade_day = next_trading_day(today)
 
 collect_signals = []
 for _, row in df_earnings.iterrows():
@@ -111,10 +111,14 @@ for _, row in df_earnings.iterrows():
     is_amc = True
     if dt is not None and hasattr(dt, 'hour'):
         is_amc = dt.hour >= 15
-    if ed == today:
-        collect_signals.append((row["ticker"], is_amc, "today"))
-    elif ed == tomorrow:
-        collect_signals.append((row["ticker"], is_amc, "tomorrow"))
+
+    # Today (AMC only) or next trading day (any)
+    if ed == today and is_amc:
+        collect_signals.append((row["ticker"], is_amc, "сегодня", ed))
+    elif ed == next_trade_day:
+        days_off = (ed - today).days
+        label = f"завтра" if days_off == 1 else f"{ed} (+{days_off}д)"
+        collect_signals.append((row["ticker"], is_amc, label, ed))
 
 # === 6. Load portfolio ===
 portfolio = Portfolio(initial_capital=1500)
@@ -123,9 +127,8 @@ summary = portfolio.summary()
 # Open buy signals (generate only — purchase via app button)
 signals_data = []
 max_concurrent = 3
-note_text = ""
 open_count = len(portfolio.open_positions)
-for t, is_amc, when in collect_signals:
+for t, is_amc, when, report_date in collect_signals:
     k_row = df_k[df_k["ticker"] == t]
     if k_row.empty:
         continue
@@ -144,9 +147,9 @@ for t, is_amc, when in collect_signals:
     note_parts = []
     if open_count >= max_concurrent:
         note_parts.append("лимит 3 поз.")
-    if not is_amc and when == "today":
-        note_parts.append("BMO — нужно вчера")
-    note = ", ".join(note_parts)
+    if when == "сегодня" and not is_amc:
+        note_parts.append(f"BMO — пропущен (был сегодня в {report_date})")
+    action = "пропущен" if (when == "сегодня" and not is_amc) else f"покупка {when}"
 
     signals_data.append({
         "ticker": t,
@@ -157,12 +160,11 @@ for t, is_amc, when in collect_signals:
         "is_opened": False,
         "is_amc": is_amc,
         "when": when,
-        "note": note,
+        "report_date": str(report_date),
+        "action": action,
+        "note": ", ".join(note_parts),
     })
-    if note:
-        log(f"SIGNAL {t}: {note} (K={k:.2f})")
-    else:
-        log(f"SIGNAL {t}: K={k:.2f} size=${target_size:,.0f} {shares}шт")
+    log(f"SIGNAL {t}: {action} (K={k:.2f}){', '+note_parts[0] if note_parts else ''}")
 
 summary = portfolio.summary()
 
@@ -178,10 +180,18 @@ if portfolio.open_positions:
         lines.append(f"  {p['ticker']} ${p['cost']:,.0f} ({p['shares']} шт)")
 if signals_data:
     lines.append("")
-    lines.append("🟢 BUY:")
+    lines.append("🟢 Сигналы:")
     for s in signals_data:
-        if s["shares"] > 0:
-            lines.append(f"  {s['ticker']} K={s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
+        act = s.get("action", "")
+        note = s.get("note", "")
+        extra = f" ({note})" if note else ""
+        if "пропущен" in act:
+            continue  # skip missed in email
+        lines.append(f"  {s['ticker']} {s['k']:.2f}  ${s['size']:,.0f}  ({s['shares']} шт)")
+    # Check if only missed signals
+    active = [s for s in signals_data if "пропущен" not in s.get("action","")]
+    if not active and signals_data:
+        lines.append("  (все сегодняшние BMO пропущены)")
 else:
     lines.append("")
     lines.append("Сигналов нет")
