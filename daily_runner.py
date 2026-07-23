@@ -103,7 +103,6 @@ today = date.today()
 tomorrow = today + timedelta(days=1)
 
 buy_signals = []
-sell_signals = []
 for _, row in df_earnings.iterrows():
     ed = row["date"]
     if isinstance(ed, str):
@@ -111,45 +110,21 @@ for _, row in df_earnings.iterrows():
     dt = pd.to_datetime(row["datetime"]) if "datetime" in row and pd.notna(row.get("datetime")) else None
     is_amc = True
     if dt is not None and hasattr(dt, 'hour'):
-        is_amc = dt.hour >= 15  # 15:00+ ET = after close
-    if ed == today:
-        if is_amc:
-            buy_signals.append(row["ticker"])  # AMC: покупаем сегодня
+        is_amc = dt.hour >= 15
+    if ed == today and is_amc:
+        buy_signals.append(row["ticker"])
     elif ed == tomorrow:
-        buy_signals.append(row["ticker"])      # завтра AMC: покупаем сегодня
+        buy_signals.append(row["ticker"])
 
 # === 6. Load portfolio ===
 portfolio = Portfolio(initial_capital=1500)
 summary = portfolio.summary()
 
-# Determine which open positions should be sold (earnings already passed)
-sells_to_close = []
-for pos in portfolio.open_positions:
-    t = pos["ticker"]
-    for _, row in df_earnings.iterrows():
-        ed = row["date"]
-        if isinstance(ed, str):
-            ed = datetime.strptime(ed[:10], "%Y-%m-%d").date()
-        if row["ticker"] == t and ed <= today:
-            sells_to_close.append((t, ed))
-
-# Close sold positions (using today's close as approximation)
-for ticker, _ in sells_to_close:
-    df_price = yf.Ticker(ticker).history(period="5d")
-    if not df_price.empty:
-        close = float(df_price["Close"].iloc[-1])
-        pos = portfolio.close_trade(ticker, close)
-        if "pnl" in pos:
-            log(f"Closed {ticker}: PnL=${pos['pnl']:.0f}")
-
-# Open buy signals (max 3 concurrent, check available capital)
+# Open buy signals (generate only — purchase via app button)
 signals_data = []
 max_concurrent = 3
 for t in buy_signals:
-    if len([p for p in portfolio.open_positions]) >= max_concurrent:
-        log(f"SKIP {t}: max {max_concurrent} concurrent positions")
-        signals_data.append({"ticker": t, "k": 0, "price": 0, "size": 0, "shares": 0, "note": "max_concurrent"})
-        continue
+    # Load K and price FIRST (before any checks)
     k_row = df_k[df_k["ticker"] == t]
     if k_row.empty:
         continue
@@ -158,18 +133,27 @@ for t in buy_signals:
     if df_price.empty:
         continue
     price = float(df_price["Close"].iloc[-1])
-    pos = portfolio.open_trade(t, k, price)
-    if pos["shares"] > 0:
-        log(f"BUY {t}: ${pos['cost']:.0f} ({pos['shares']} шт)")
-    else:
-        log(f"SKIP {t}: {pos.get('note', 'insufficient capital')}")
+
+    open_count = len([p for p in portfolio.open_positions])
+    capital = portfolio.current_capital
+    free = portfolio.free_capital()
+    pos_frac = min(0.33 * min(k / 1.1, 3.0), 0.50)
+    target_size = capital * pos_frac
+    shares = int(min(target_size, free) / price)
+
     signals_data.append({
         "ticker": t,
         "k": round(k, 2),
         "price": round(price, 2),
-        "size": round(pos["cost"], 0) if pos["shares"] > 0 else 0,
-        "shares": pos["shares"],
+        "size": round(target_size, 0),
+        "shares": shares,
+        "is_opened": False,
+        "note": "" if open_count < max_concurrent else "max_concurrent",
     })
+    if open_count >= max_concurrent:
+        log(f"SIGNAL {t}: K={k:.2f} size=${target_size:,.0f} (LIMIT {max_concurrent} pos)")
+    else:
+        log(f"SIGNAL {t}: K={k:.2f} size=${target_size:,.0f} {shares}шт")
 
 summary = portfolio.summary()
 
@@ -206,7 +190,7 @@ send_email(f"ISTS: {len(signals_data)} trades today" if signals_data else "ISTS:
 web_data = {
     "candidates": signals_data,
     "open_positions": portfolio.open_positions,
-    "sell_signals": [portfolio.find_open(t) for t, _ in sells_to_close],
+    "sell_signals": [],
     "completed_trades": len(portfolio.completed_trades),
     "pnl_total": summary["pnl_total"],
 }

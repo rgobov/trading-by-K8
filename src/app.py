@@ -225,37 +225,89 @@ class TrackerApp:
         else:
             for s in cand:
                 pos_frac = min(0.33 * min(s.get("k", 1.1) / 1.1, 3.0), 0.50)
-                size = s.get("size", 0)
+                target_size = s.get("size", 0)
                 shares = s.get("shares", 0)
-                price = s.get("price", 0)
-                def make_buy(ticker, pr, sh):
+                est_price = s.get("price", 0)
+                is_open = s.get("is_opened", False)
+                # Skip positions already opened
+                if is_open:
+                    continue
+                # Check if already in portfolio
+                existing = [p for p in self.portfolio.open_positions if p["ticker"] == s.get("ticker")]
+                if existing:
+                    continue
+
+                def make_buy(ticker, est_p, pos_frac, port):
                     def buy(e):
-                        if not pr or not sh or sh <= 0:
-                            return
-                        cost = sh * pr
-                        if cost > self.portfolio.current_capital:
-                            page.snack_bar = ft.SnackBar(ft.Text(f"Не хватает: нужно ${cost:,.0f}"))
-                            page.snack_bar.open = True
-                            page.update()
-                            return
-                        self.portfolio.open_positions.append({
-                            "ticker": ticker, "buy_price": pr, "shares": sh,
-                            "cost": cost, "buy_date": str(date.today()),
-                            "status": "open",
-                        })
-                        self.portfolio.current_capital -= cost
-                        self.portfolio.save()
-                        page.controls.clear()
-                        page.controls.extend(self._build_rows(page))
+                        dlg = ft.AlertDialog(
+                            title=ft.Text(f"{ticker} — цена из wikifolio"),
+                            content=ft.Column([
+                                ft.Text(f"Размер позиции: ${port * pos_frac:,.0f}"),
+                                ft.TextField(label="Цена покупки из wikifolio ($)",
+                                             value=est_p, width=200),
+                            ], tight=True, spacing=10),
+                            actions=[
+                                ft.TextButton("Отмена", on_click=lambda e: close_dlg(dlg, page)),
+                                ft.ElevatedButton("✅ Купить", on_click=lambda e: confirm_buy(e, dlg, ticker, port, pos_frac)),
+                            ],
+                        )
+                        page.dialog = dlg
+                        dlg.open = True
                         page.update()
                     return buy
+
+                def confirm_buy(e, dlg, ticker, port, pos_frac):
+                    try:
+                        wikifolio_price = float(dlg.content.controls[1].value)
+                        if wikifolio_price <= 0:
+                            raise ValueError
+                    except:
+                        page.snack_bar = ft.SnackBar(ft.Text("Введи корректную цену"))
+                        page.snack_bar.open = True
+                        page.update()
+                        return
+                    target_size = port * pos_frac
+                    shares = int(target_size / wikifolio_price)
+                    if shares < 1:
+                        page.snack_bar = ft.SnackBar(ft.Text("Не хватает даже на 1 акцию"))
+                        page.snack_bar.open = True
+                        page.update()
+                        return
+                    cost = shares * wikifolio_price
+                    free = self.portfolio.free_capital()
+                    if cost > free:
+                        page.snack_bar = ft.SnackBar(ft.Text(f"Не хватает: нужно ${cost:,.0f}, свободно ${free:,.0f}"))
+                        page.snack_bar.open = True
+                        page.update()
+                        return
+                    self.portfolio.open_positions.append({
+                        "ticker": ticker, "buy_price": wikifolio_price,
+                        "shares": shares, "cost": cost,
+                        "buy_date": str(date.today()), "status": "open",
+                        "source": "wikifolio",
+                    })
+                    self.portfolio.current_capital -= cost
+                    self.portfolio.save()
+                    dlg.open = False
+                    page.dialog = None
+                    page.controls.clear()
+                    page.controls.extend(self._build_rows(page))
+                    page.update()
+
+                def close_dlg(dlg, page):
+                    dlg.open = False
+                    page.dialog = None
+                    page.update()
+
                 yield ft.Row([
                     ft.Text(s.get("ticker", ""), width=80, weight="bold", color="green"),
                     ft.Text(f"K={s.get('k',0):.2f}", width=80),
-                    ft.Text(f"${size:,.0f}" if size else "-", width=100),
-                    ft.Text(f"{shares} шт" if shares else "-", width=80),
-                    ft.ElevatedButton("Купить", on_click=make_buy(s.get("ticker",""), price, shares),
-                                      bgcolor="green", color="white"),
+                    ft.Text(f"${target_size:,.0f}" if target_size else "-", width=100),
+                    ft.Text(f"≈{shares} шт" if shares else "-", width=80),
+                    ft.ElevatedButton("➕ Купить",
+                        on_click=make_buy(s.get("ticker",""), est_price, pos_frac,
+                                          self.portfolio.current_capital),
+                        bgcolor="green", color="white"),
                 ])
 
         yield ft.Divider()
