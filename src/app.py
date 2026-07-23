@@ -240,9 +240,9 @@ class TrackerApp:
 
                 def make_buy(ticker, est_p, pos_frac, port):
                     def buy(e):
-                        price_field = ft.TextField(label="Цена покупки из wikifolio ($",
+                        price_field = ft.TextField(label="Цена покупки из wikifolio ($)",
                                                    value=str(est_p) if est_p else "",
-                                                   width=200, prefix_text="$")
+                                                   width=200)
                         dlg = ft.AlertDialog(
                             title=ft.Text(f"{ticker}"),
                             content=ft.Column([
