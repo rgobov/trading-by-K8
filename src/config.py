@@ -45,7 +45,7 @@ BACKTEST_HOLD_DAYS_AFTER = 1
 BACKTEST_BUY_DAYS_BEFORE = 1
 
 CALC_MIN_QUARTERS = 4
-CANDIDATES_REFRESH_DAYS = 30  # пересчёт кандидатов раз в 30 дней
+CANDIDATES_REFRESH_DAYS = 15  # пересчёт кандидатов раз в 15 дней
 
 # Email notifications (mail.ru)
 # Пароль читается из .env или переменной окружения
