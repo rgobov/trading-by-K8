@@ -1,138 +1,220 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="UTF-8"><title>ISTS Trading Signals</title>
+<head><meta charset="UTF-8"><title>ISTS — Portfolio Tracker</title>
 <style>
-body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #0d1117; color: #e6edf3; }
+body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; background: #0d1117; color: #e6edf3; }
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin: 10px 0; }
 h2 { margin: 0 0 15px 0; font-size: 18px; color: #58a6ff; }
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
-th { color: #8b949e; font-size: 13px; text-transform: uppercase; }
-.buy { color: #3fb950; font-weight: bold; }
-.sell { color: #f85149; font-weight: bold; }
-.open { color: #d29922; }
-input, button { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 8px 16px; border-radius: 6px; font-size: 14px; }
-button { background: #238636; cursor: pointer; }
-button:hover { background: #2ea043; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #21262d; font-size: 14px; }
+th { color: #8b949e; font-size: 12px; text-transform: uppercase; }
+input, button, .btn { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+button:hover { filter: brightness(1.2); }
+.btn-close { background: #da3633; }
+.btn-close:hover { background: #f85149; }
+.btn-save { background: #1f6feb; }
+.btn-save:hover { background: #388bfd; }
 .summary { display: flex; gap: 20px; flex-wrap: wrap; }
-.summary-item { flex: 1; min-width: 120px; }
-.summary-item .label { font-size: 12px; color: #8b949e; }
-.summary-item .value { font-size: 24px; font-weight: bold; }
+.summary-item { flex: 1; min-width: 100px; }
+.summary-item .label { font-size: 11px; color: #8b949e; }
+.summary-item .value { font-size: 22px; font-weight: bold; }
 .green { color: #3fb950; }
 .red { color: #f85149; }
+.yellow { color: #d29922; }
+input[type=number] { width: 80px; text-align: right; }
 </style></head>
 <body>
-<h1>📊 ISTS Trading Signals</h1>
-<div class="card">
-  <div class="summary" id="summary">
-    <div class="summary-item"><div class="label">Портфель</div><div class="value" id="portfolioDisplay">$0</div></div>
-    <div class="summary-item"><div class="label">Свободно</div><div class="value green" id="freeDisplay">$0</div></div>
-    <div class="summary-item"><div class="label">Открыто</div><div class="value" id="openDisplay">0</div></div>
-    <div class="summary-item"><div class="label">Сделок всего</div><div class="value" id="tradesDisplay">0</div></div>
-    <div class="summary-item"><div class="label">PNL</div><div class="value" id="pnlDisplay">$0</div></div>
-  </div>
-</div>
+<h1>📊 ISTS Portfolio Tracker</h1>
+<div class="card"><div class="summary">
+  <div class="summary-item"><div class="label">Портфель</div><div class="value" id="portVal">$0</div></div>
+  <div class="summary-item"><div class="label">Свободно</div><div class="value green" id="freeVal">$0</div></div>
+  <div class="summary-item"><div class="label">Открыто</div><div class="value yellow" id="openCount">0</div></div>
+  <div class="summary-item"><div class="label">Закрыто</div><div class="value" id="closedCount">0</div></div>
+  <div class="summary-item"><div class="label">Real. PNL</div><div class="value" id="pnlVal">$0</div></div>
+</div></div>
 
 <div class="card">
   <h2>🟡 Открытые позиции</h2>
-  <table><thead><tr><th>Тикер</th><th>Цена покупки</th><th>Шт</th><th>Стоимость</th><th>Цена закрытия</th><th>PNL</th></tr></thead>
-  <tbody id="openTable"></tbody></table>
+  <table><thead><tr><th>Тикер</th><th>Куплено по</th><th>Шт</th><th>Стоимость</th><th>Цена закрытия</th><th>PNL</th><th></th></tr></thead>
+  <tbody id="openTbody"></tbody></table>
 </div>
 
 <div class="card">
-  <h2>🟢 Сигналы BUY</h2>
-  <table><thead><tr><th>Тикер</th><th>K</th><th>% портфеля</th><th>$</th><th>Шт</th></tr></thead>
-  <tbody id="buyTable"></tbody></table>
+  <h2>🟢 Сигналы BUY (сегодня)</h2>
+  <table><thead><tr><th>Тикер</th><th>K</th><th>% портфеля</th><th>$</th><th>Шт</th><th></th></tr></thead>
+  <tbody id="buyTbody"></tbody></table>
 </div>
 
 <div class="card">
-  <h2>🔴 Сигналы SELL</h2>
-  <table><thead><tr><th>Тикер</th><th>Дата покупки</th><th>Цена покупки</th><th>Стоимость</th></tr></thead>
-  <tbody id="sellTable"></tbody></table>
+  <h2>🔴 Сигналы SELL (сегодня)</h2>
+  <table><thead><tr><th>Тикер</th><th>Куплен</th><th>Цена</th><th>Стоимость</th></tr></thead>
+  <tbody id="sellTbody"></tbody></table>
 </div>
 
 <div class="card">
-  <h2>⚙️ Настройки</h2>
-  <label>Стоимость портфеля: $</label>
-  <input type="number" id="portfolioInput" value="100000" min="1000" step="1000">
-  <button onclick="recalc()">Пересчитать</button>
+  <h2>📜 История закрытых сделок</h2>
+  <table><thead><tr><th>Тикер</th><th>Куплен</th><th>Кол-во</th><th>Цена покупки</th><th>Цена продажи</th><th>PNL</th></tr></thead>
+  <tbody id="historyTbody"></tbody></table>
 </div>
+
+<div class="card" style="display:flex;gap:10px;align-items:center">
+  <span>💰 Портфель: $</span>
+  <input type="number" id="portfolioInput" value="1500" min="100" style="width:120px">
+  <button onclick="render()">⟳ Пересчитать</button>
+  <button class="btn-save" onclick="saveState()">💾 Скачать state</button>
+  <button onclick="localStorage.clear(); render()">🗑️ Сброс</button>
+</div>
+
+<script id="__DATA__" type="application/json">{"candidates":[],"sell_signals":[],"open_positions":[],"completed_trades":0,"pnl_total":0}</script>
 
 <script>
-const DATA = JSON.parse(document.getElementById('__DATA__')?.textContent || '{}');
-function fmt(n) { return Number(n || 0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
-function fmt1(n) { return Number(n || 0).toLocaleString('en-US', {minimumFractionDigits:1, maximumFractionDigits:1}); }
+const INIT_DATA = JSON.parse(document.getElementById('__DATA__')?.textContent || '{}');
+const STORAGE_KEY = 'ists_tracker';
 
-function recalc() {
-  const portfolio = Number(document.getElementById('portfolioInput').value) || 100000;
-  const signals = DATA.candidates || [];
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {capital: 1500, positions: [], closed: []}; }
+  catch { return {capital: 1500, positions: [], closed: []}; }
+}
+function saveTracker(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
 
-  let openHtml = '', buyHtml = '', sellHtml = '';
-  let openCost = 0, free = portfolio;
+const state = loadState();
+if (!state.capital || state.capital < 100) state.capital = 1500;
 
-  // Open positions with close price input
-  (DATA.open_positions || []).forEach((p, i) => {
-    const pct = (p.cost / portfolio * 100).toFixed(1);
-    const closeId = `close_${i}`;
-    const pnlId = `pnl_${i}`;
+function fmt(n) { return Number(n||0).toLocaleString('en-US', {minFraction:0, maxFraction:0}); }
+function fmt1(n) { return Number(n||0).toFixed(1); }
+
+function render() {
+  state.capital = Number(document.getElementById('portfolioInput').value) || state.capital;
+  const portfolio = state.capital;
+  let free = portfolio;
+  const openPos = state.positions;
+
+  // OPEN table
+  let openHtml = '';
+  openPos.forEach((p, i) => {
+    const closeId = `cl_${i}`;
+    const pnlId = `pn_${i}`;
     openHtml += `<tr>
-      <td>${p.ticker}</td>
+      <td><b>${p.ticker}</b></td>
       <td>$${fmt(p.buy_price)}</td>
       <td>${p.shares}</td>
       <td>$${fmt(p.cost)}</td>
-      <td><input type="number" id="${closeId}" oninput="calcPnl(${i}, ${p.cost}, ${p.shares}, ${portfolio})" style="width:90px"></td>
-      <td id="${pnlId}" style="color:#8b949e">—</td>
+      <td><input type="number" id="${closeId}" value="${p.closePrice||''}" oninput="calcPnl(${i})" step="0.01"></td>
+      <td id="${pnlId}" style="font-weight:bold;color:#8b949e">—</td>
+      <td><button class="btn-close" onclick="closePos(${i})">✕ Закрыть</button></td>
     </tr>`;
-    openCost += p.cost;
     free -= p.cost;
   });
-
-  function calcPnl(idx, cost, shares, port) {
-    const closePrice = Number(document.getElementById(`close_${idx}`).value) || 0;
-    const pnlEl = document.getElementById(`pnl_${idx}`);
-    if (closePrice <= 0) { pnlEl.textContent = '—'; pnlEl.style.color = '#8b949e'; return; }
-    const proceeds = closePrice * shares;
-    const pnl = proceeds - cost;
-    const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
-    pnlEl.textContent = `$${pnlStr}`;
-    pnlEl.style.color = pnl >= 0 ? '#3fb950' : '#f85149';
-  }
-
+  if (!openHtml) openHtml = '<tr><td colspan="7" style="color:#8b949e">Нет открытых позиций</td></tr>';
+  document.getElementById('openTbody').innerHTML = openHtml;
   free = Math.max(0, free);
 
-  // BUY signals - calculate from free capital
-  (signals || []).forEach(s => {
+  // BUY table
+  let buyHtml = '';
+  (INIT_DATA.candidates || []).forEach(s => {
     const posFrac = Math.min(0.33 * Math.min(s.k / 1.1, 3.0), 0.50);
     const size = portfolio * posFrac;
     const shares = Math.floor(size / (s.price || 100));
-    buyHtml += `<tr><td class="buy">${s.ticker}</td><td>${fmt1(s.k)}</td><td>${(posFrac*100).toFixed(1)}%</td><td>$${fmt(Math.min(size, free))}</td><td>${shares}</td></tr>`;
+    buyHtml += `<tr><td class="buy"><b>${s.ticker}</b></td>
+      <td>${fmt1(s.k)}</td><td>${(posFrac*100).toFixed(1)}%</td>
+      <td>$${fmt(Math.min(size,free))}</td><td>${shares}</td>
+      <td><button onclick="addPos('${s.ticker}',${s.price||0},${shares})">➕ Купить</button></td></tr>`;
   });
+  if (!buyHtml) buyHtml = '<tr><td colspan="6" style="color:#8b949e">Нет сигналов</td></tr>';
+  document.getElementById('buyTbody').innerHTML = buyHtml;
 
-  // SELL signals (from open positions)
-  (DATA.sell_signals || []).forEach(s => {
-    sellHtml += `<tr><td class="sell">${s.ticker}</td><td>${s.buy_date || '-'}</td><td>$${fmt(s.buy_price || 0)}</td><td>$${fmt(s.cost || 0)}</td></tr>`;
+  // SELL table
+  let sellHtml = '';
+  (INIT_DATA.sell_signals || []).forEach(s => {
+    sellHtml += `<tr><td class="sell"><b>${s.ticker}</b></td>
+      <td>${s.buy_date || '-'}</td><td>$${fmt(s.buy_price||0)}</td><td>$${fmt(s.cost||0)}</td></tr>`;
   });
+  if (!sellHtml) sellHtml = '<tr><td colspan="4" style="color:#8b949e">Нет сигналов</td></tr>';
+  document.getElementById('sellTbody').innerHTML = sellHtml;
 
-  if (!openHtml) openHtml = '<tr><td colspan="6" style="color:#8b949e">Нет открытых позиций</td></tr>';
-  if (!buyHtml) buyHtml = '<tr><td colspan="5" style="color:#8b949e">Нет сигналов на сегодня</td></tr>';
-  if (!sellHtml) sellHtml = '<tr><td colspan="4" style="color:#8b949e">Нет сигналов на продажу</td></tr>';
+  // HISTORY
+  let histHtml = '';
+  state.closed.forEach(h => {
+    const pnl = h.pnl || 0;
+    histHtml += `<tr><td>${h.ticker}</td><td>${h.sell_date||'-'}</td>
+      <td>${h.shares}</td><td>$${fmt(h.buy_price)}</td>
+      <td>$${fmt(h.sell_price)}</td>
+      <td style="font-weight:bold;color:${pnl>=0?'#3fb950':'#f85149'}">${pnl>=0?'+':''}$${fmt(pnl)}</td></tr>`;
+  });
+  if (!histHtml) histHtml = '<tr><td colspan="6" style="color:#8b949e">Нет закрытых сделок</td></tr>';
+  document.getElementById('historyTbody').innerHTML = histHtml;
 
-  document.getElementById('openTable').innerHTML = openHtml;
-  document.getElementById('buyTable').innerHTML = buyHtml;
-  document.getElementById('sellTable').innerHTML = sellHtml;
-  document.getElementById('portfolioDisplay').textContent = '$' + fmt(portfolio);
-  document.getElementById('freeDisplay').textContent = '$' + fmt(free);
-  document.getElementById('openDisplay').textContent = DATA.open_positions?.length || 0;
-  document.getElementById('tradesDisplay').textContent = DATA.completed_trades || 0;
-  
-  const pnl = DATA.pnl_total || 0;
-  const pnlEl = document.getElementById('pnlDisplay');
-  pnlEl.textContent = '$' + fmt(Math.abs(pnl));
-  pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+  // Summary
+  document.getElementById('portVal').textContent = '$' + fmt(portfolio);
+  document.getElementById('freeVal').textContent = '$' + fmt(free);
+  document.getElementById('openCount').textContent = openPos.length;
+  document.getElementById('closedCount').textContent = state.closed.length;
+  const totalPnl = state.closed.reduce((s, h) => s + (h.pnl || 0), 0);
+  const pnlEl = document.getElementById('pnlVal');
+  pnlEl.textContent = '$' + fmt(Math.abs(totalPnl));
+  pnlEl.className = 'value ' + (totalPnl >= 0 ? 'green' : 'red');
+
+  saveTracker(state);
 }
 
-const script = document.getElementById('__DATA__');
-if (script) { Object.assign(DATA, JSON.parse(script.textContent)); recalc(); }
-recalc();
-</script>
-</body></html>
+function calcPnl(idx) {
+  const p = state.positions[idx];
+  if (!p) return;
+  const closePrice = Number(document.getElementById(`cl_${idx}`).value) || 0;
+  const el = document.getElementById(`pn_${idx}`);
+  if (closePrice <= 0) { el.textContent = '—'; el.style.color = '#8b949e'; return; }
+  const pnl = closePrice * p.shares - p.cost;
+  el.textContent = (pnl >= 0 ? '+' : '') + '$' + fmt(pnl);
+  el.style.color = pnl >= 0 ? '#3fb950' : '#f85149';
+}
+
+function closePos(idx) {
+  const p = state.positions[idx];
+  if (!p) return;
+  const closePrice = Number(document.getElementById(`cl_${idx}`).value) || 0;
+  if (closePrice <= 0) { alert('Введи цену закрытия'); return; }
+  const proceeds = closePrice * p.shares;
+  const pnl = proceeds - p.cost;
+  p.sell_price = closePrice;
+  p.sell_date = new Date().toISOString().slice(0,10);
+  p.pnl = pnl;
+  state.closed.push(p);
+  state.positions.splice(idx, 1);
+  state.capital += pnl;
+  saveTracker(state);
+  render();
+}
+
+function addPos(ticker, price, shares) {
+  if (!price || !shares) return;
+  const cost = shares * price;
+  if (cost > state.capital) { alert(`Не хватает: нужно $${fmt(cost)}, доступно $${fmt(state.capital)}`); return; }
+  state.positions.push({
+    ticker, buy_price: price, shares, cost,
+    buy_date: new Date().toISOString().slice(0,10)
+  });
+  state.capital -= cost;
+  saveTracker(state);
+  render();
+}
+
+function saveState() {
+  const blob = new Blob([JSON.stringify({
+    initial_capital: 1500,
+    current_capital: state.capital,
+    open_positions: state.positions,
+    completed_trades: state.closed.map(h => ({ticker:h.ticker, sell_date:h.sell_date, sell_price:h.sell_price, pnl:h.pnl})),
+    last_update: new Date().toISOString().slice(0,10),
+  }, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'portfolio_state.json';
+  a.click();
+}
+
+// Init
+document.getElementById('portfolioInput').value = state.capital;
+render();
+</script></body></html>
