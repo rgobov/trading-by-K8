@@ -1,5 +1,5 @@
 """Desktop app for ISTS portfolio tracking"""
-import json, os, sys, subprocess
+import json, os, sys, subprocess, threading
 from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,30 +29,68 @@ class TrackerApp:
             return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
         return "никогда"
 
-    def check_signals(self, page):
-        page.snack_bar = ft.SnackBar(ft.Text("Проверка сигналов..."))
-        page.snack_bar.open = True
+    def check_signals(self, page, button_row):
+        """Run daily_runner in background, show progress in UI"""
+        # Replace button row with progress
+        progress = ft.ProgressRing()
+        status_text = ft.Text("Запуск проверки...", size=13, color="grey")
+        button_row.controls.clear()
+        button_row.controls.append(progress)
+        button_row.controls.append(status_text)
         page.update()
-        try:
-            import subprocess
-            subprocess.run(
-                [sys.executable, "daily_runner.py"],
-                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                capture_output=True, text=True, timeout=600,
-            )
-            self._load_signals()
-            self.last_check = self._get_check_time()
-            page.snack_bar = ft.SnackBar(ft.Text("Готово"))
-            page.snack_bar.open = True
-        except subprocess.TimeoutExpired:
-            page.snack_bar = ft.SnackBar(ft.Text("Тайм-аут (10 мин)"), bgcolor="red")
-            page.snack_bar.open = True
-        except Exception as ex:
-            page.snack_bar = ft.SnackBar(ft.Text(f"Ошибка: {ex}"), bgcolor="red")
-            page.snack_bar.open = True
-        page.controls.clear()
-        page.controls.extend(self._build_rows(page))
-        page.update()
+
+        def run():
+            steps = [
+                ("SEC данные...", "SEC EDGAR (инкрементально)"),
+                ("Расчет K...", "Калькулятор K-рейтингов"),
+                ("Фильтр кандидатов...", "Отбор по K>1.1+сектора"),
+                ("Поиск отчетов...", "Проверка earnings dates"),
+                ("Генерация сигналов...", "Формирование сигналов"),
+            ]
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, "daily_runner.py"],
+                    cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                for line in iter(proc.stdout.readline, ""):
+                    if not line:
+                        break
+                    for tag, desc in steps:
+                        if tag.lower() in line.lower():
+                            status_text.value = desc
+                            page.update()
+
+                proc.wait(timeout=600)
+
+                self._load_signals()
+                self.last_check = self._get_check_time()
+
+                button_row.controls.clear()
+                button_row.controls.append(
+                    ft.ElevatedButton("⟳ Проверить сигналы",
+                                      on_click=lambda e: self.check_signals(page, button_row),
+                                      bgcolor="blue", color="white", icon="refresh")
+                )
+                button_row.controls.append(
+                    ft.Text(f"Последняя: {self.last_check}", size=12, color="grey")
+                )
+                page.controls.clear()
+                page.controls.extend(self._build_rows(page))
+                page.update()
+
+            except Exception as ex:
+                button_row.controls.clear()
+                button_row.controls.append(
+                    ft.ElevatedButton("⟳ Ошибка, повторить",
+                                      on_click=lambda e: self.check_signals(page, button_row),
+                                      bgcolor="red", color="white")
+                )
+                button_row.controls.append(ft.Text(f"{ex}", size=12, color="red"))
+                page.update()
+
+        threading.Thread(target=run, daemon=True).start()
 
     def _save_portfolio(self):
         self.portfolio.save()
@@ -255,12 +293,13 @@ class TrackerApp:
             page.update()
 
         yield ft.Divider()
-        yield ft.Row([
+        btn_row = ft.Row([
             ft.ElevatedButton("⟳ Проверить сигналы",
-                              on_click=lambda e: self.check_signals(page),
+                              on_click=lambda e: self.check_signals(page, btn_row),
                               bgcolor="blue", color="white", icon="refresh"),
-            ft.Text(f"Последняя проверка: {self.last_check}", size=12, color="grey"),
+            ft.Text(f"Последняя: {self.last_check}", size=12, color="grey"),
         ])
+        yield btn_row
         yield ft.Row([
             ft.Text("Портфель: $"),
             capital_input,
