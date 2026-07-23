@@ -35,7 +35,7 @@ button:hover { background: #2ea043; }
 
 <div class="card">
   <h2>🟡 Открытые позиции</h2>
-  <table><thead><tr><th>Тикер</th><th>Цена</th><th>Шт</th><th>Стоимость</th><th>% портфеля</th></tr></thead>
+  <table><thead><tr><th>Тикер</th><th>Цена покупки</th><th>Шт</th><th>Стоимость</th><th>Цена закрытия</th><th>PNL</th></tr></thead>
   <tbody id="openTable"></tbody></table>
 </div>
 
@@ -70,13 +70,33 @@ function recalc() {
   let openHtml = '', buyHtml = '', sellHtml = '';
   let openCost = 0, free = portfolio;
 
-  // Open positions (in portfolio state)
-  (DATA.open_positions || []).forEach(p => {
+  // Open positions with close price input
+  (DATA.open_positions || []).forEach((p, i) => {
     const pct = (p.cost / portfolio * 100).toFixed(1);
-    openHtml += `<tr><td>${p.ticker}</td><td>$${fmt(p.buy_price)}</td><td>${p.shares}</td><td>$${fmt(p.cost)}</td><td>${pct}%</td></tr>`;
+    const closeId = `close_${i}`;
+    const pnlId = `pnl_${i}`;
+    openHtml += `<tr>
+      <td>${p.ticker}</td>
+      <td>$${fmt(p.buy_price)}</td>
+      <td>${p.shares}</td>
+      <td>$${fmt(p.cost)}</td>
+      <td><input type="number" id="${closeId}" oninput="calcPnl(${i}, ${p.cost}, ${p.shares}, ${portfolio})" style="width:90px"></td>
+      <td id="${pnlId}" style="color:#8b949e">—</td>
+    </tr>`;
     openCost += p.cost;
     free -= p.cost;
   });
+
+  function calcPnl(idx, cost, shares, port) {
+    const closePrice = Number(document.getElementById(`close_${idx}`).value) || 0;
+    const pnlEl = document.getElementById(`pnl_${idx}`);
+    if (closePrice <= 0) { pnlEl.textContent = '—'; pnlEl.style.color = '#8b949e'; return; }
+    const proceeds = closePrice * shares;
+    const pnl = proceeds - cost;
+    const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+    pnlEl.textContent = `$${pnlStr}`;
+    pnlEl.style.color = pnl >= 0 ? '#3fb950' : '#f85149';
+  }
 
   free = Math.max(0, free);
 
@@ -93,7 +113,7 @@ function recalc() {
     sellHtml += `<tr><td class="sell">${s.ticker}</td><td>${s.buy_date || '-'}</td><td>$${fmt(s.buy_price || 0)}</td><td>$${fmt(s.cost || 0)}</td></tr>`;
   });
 
-  if (!openHtml) openHtml = '<tr><td colspan="5" style="color:#8b949e">Нет открытых позиций</td></tr>';
+  if (!openHtml) openHtml = '<tr><td colspan="6" style="color:#8b949e">Нет открытых позиций</td></tr>';
   if (!buyHtml) buyHtml = '<tr><td colspan="5" style="color:#8b949e">Нет сигналов на сегодня</td></tr>';
   if (!sellHtml) sellHtml = '<tr><td colspan="4" style="color:#8b949e">Нет сигналов на продажу</td></tr>';
 
