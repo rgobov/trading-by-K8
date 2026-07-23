@@ -16,6 +16,8 @@ class TrackerApp:
         self.portfolio = Portfolio(initial_capital=1500)
         self.signals = {"candidates": [], "sell_signals": []}
         self.last_check = self._get_check_time()
+        self._check_proc = None
+        self._check_cancelled = False
         self._load_signals()
 
     def _load_signals(self):
@@ -30,67 +32,92 @@ class TrackerApp:
         return "никогда"
 
     def check_signals(self, page, button_row):
-        """Run daily_runner in background, show progress in UI"""
-        # Replace button row with progress
+        """Run daily_runner in background, show progress in UI, supports cancel"""
+        self._check_cancelled = False
+
         progress = ft.ProgressRing()
         status_text = ft.Text("Запуск проверки...", size=13, color="grey")
+        cancel_btn = ft.ElevatedButton("Отмена", on_click=lambda e: self._cancel_check(),
+                                       bgcolor="grey", color="white")
+
         button_row.controls.clear()
         button_row.controls.append(progress)
         button_row.controls.append(status_text)
+        button_row.controls.append(cancel_btn)
         page.update()
 
         def run():
-            steps = [
-                ("SEC данные...", "SEC EDGAR (инкрементально)"),
-                ("Расчет K...", "Калькулятор K-рейтингов"),
-                ("Фильтр кандидатов...", "Отбор по K>1.1+сектора"),
-                ("Поиск отчетов...", "Проверка earnings dates"),
-                ("Генерация сигналов...", "Формирование сигналов"),
-            ]
             try:
-                proc = subprocess.Popen(
-                    [sys.executable, "daily_runner.py"],
-                    cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                script = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "daily_runner.py"
+                )
+                self._check_proc = subprocess.Popen(
+                    [sys.executable, script],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True,
                 )
-                for line in iter(proc.stdout.readline, ""):
+                for line in iter(self._check_proc.stdout.readline, ""):
                     if not line:
                         break
-                    for tag, desc in steps:
+                    if self._check_cancelled:
+                        self._check_proc.kill()
+                        break
+                    for tag, desc in [
+                        ("SEC", "SEC данные..."),
+                        ("K ratings", "Расчет K..."),
+                        ("Filtering", "Фильтр кандидатов..."),
+                        ("earnings", "Поиск отчетов..."),
+                        ("Signals HTML", "Генерация сигналов..."),
+                        ("Email", "Отправка email..."),
+                    ]:
                         if tag.lower() in line.lower():
                             status_text.value = desc
                             page.update()
+                            break
 
-                proc.wait(timeout=600)
+                self._check_proc.wait(timeout=120)
+                self._check_proc = None
+
+                if self._check_cancelled:
+                    self._restore_button(page, button_row)
+                    return
 
                 self._load_signals()
                 self.last_check = self._get_check_time()
 
-                button_row.controls.clear()
-                button_row.controls.append(
-                    ft.ElevatedButton("⟳ Проверить сигналы",
-                                      on_click=lambda e: self.check_signals(page, button_row),
-                                      bgcolor="blue", color="white", icon="refresh")
-                )
-                button_row.controls.append(
-                    ft.Text(f"Последняя: {self.last_check}", size=12, color="grey")
-                )
-                page.controls.clear()
-                page.controls.extend(self._build_rows(page))
-                page.update()
-
+            except subprocess.TimeoutExpired:
+                status_text.value = "Тайм-аут, повторите"
+                if self._check_proc:
+                    self._check_proc.kill()
             except Exception as ex:
-                button_row.controls.clear()
-                button_row.controls.append(
-                    ft.ElevatedButton("⟳ Ошибка, повторить",
-                                      on_click=lambda e: self.check_signals(page, button_row),
-                                      bgcolor="red", color="white")
-                )
-                button_row.controls.append(ft.Text(f"{ex}", size=12, color="red"))
-                page.update()
+                status_text.value = f"Ошибка: {ex}"
+
+            self._restore_button(page, button_row)
 
         threading.Thread(target=run, daemon=True).start()
+
+    def _cancel_check(self):
+        self._check_cancelled = True
+        if self._check_proc:
+            try:
+                self._check_proc.kill()
+            except:
+                pass
+
+    def _restore_button(self, page, button_row):
+        button_row.controls.clear()
+        button_row.controls.append(
+            ft.ElevatedButton("⟳ Проверить сигналы",
+                              on_click=lambda e: self.check_signals(page, button_row),
+                              bgcolor="blue", color="white", icon="refresh")
+        )
+        button_row.controls.append(
+            ft.Text(f"Последняя: {self.last_check}", size=12, color="grey")
+        )
+        page.controls.clear()
+        page.controls.extend(self._build_rows(page))
+        page.update()
 
     def _save_portfolio(self):
         self.portfolio.save()
@@ -320,6 +347,7 @@ def main(page: ft.Page):
 
     app = TrackerApp()
     page.controls.extend(app._build_rows(page))
+    page.on_close = lambda e: app._cancel_check()
     page.update()
 
 ft.app(target=main)
