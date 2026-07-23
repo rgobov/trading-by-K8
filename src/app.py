@@ -168,7 +168,7 @@ class TrackerApp:
                 ft.Text("Стоимость", weight="bold", width=100),
                 ft.Text("Цена закрытия", weight="bold", width=130),
                 ft.Text("", width=80),
-            ], size=12)
+            ])
             for p in self.portfolio.open_positions:
                 price_input = ft.TextField(value="", width=100, text_align="right", data=p)
                 pnl_text = ft.Text("", color="grey")
@@ -284,7 +284,7 @@ class TrackerApp:
                 ft.Text("Тикер", weight="bold", width=80),
                 ft.Text("Дата", weight="bold", width=90),
                 ft.Text("PNL", weight="bold", width=100),
-            ], size=12)
+            ])
             for h in self.portfolio.completed_trades[-20:]:
                 pnl = h.get("pnl", 0)
                 yield ft.Row([
