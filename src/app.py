@@ -240,26 +240,26 @@ class TrackerApp:
 
                 def make_buy(ticker, est_p, pos_frac, port):
                     def buy(e):
+                        price_field = ft.TextField(label="Цена покупки из wikifolio ($",
+                                                   value=str(est_p) if est_p else "",
+                                                   width=200, prefix_text="$")
                         dlg = ft.AlertDialog(
-                            title=ft.Text(f"{ticker} — цена из wikifolio"),
+                            title=ft.Text(f"{ticker}"),
                             content=ft.Column([
-                                ft.Text(f"Размер позиции: ${port * pos_frac:,.0f}"),
-                                ft.TextField(label="Цена покупки из wikifolio ($)",
-                                             value=est_p, width=200),
+                                ft.Text(f"Размер: ${port * pos_frac:,.0f}"),
+                                price_field,
                             ], tight=True, spacing=10),
                             actions=[
-                                ft.TextButton("Отмена", on_click=lambda e: close_dlg(dlg, page)),
-                                ft.ElevatedButton("✅ Купить", on_click=lambda e: confirm_buy(e, dlg, ticker, port, pos_frac)),
+                                ft.TextButton("Отмена", on_click=lambda e: page.close(dlg)),
+                                ft.ElevatedButton("✅ Купить", on_click=lambda e: confirm_buy(e, dlg, ticker, port, pos_frac, price_field)),
                             ],
                         )
-                        page.dialog = dlg
-                        dlg.open = True
-                        page.update()
+                        page.show_dialog(dlg)
                     return buy
 
-                def confirm_buy(e, dlg, ticker, port, pos_frac):
+                def confirm_buy(e, dlg, ticker, port, pos_frac, price_field):
                     try:
-                        wikifolio_price = float(dlg.content.controls[1].value)
+                        wikifolio_price = float(price_field.value)
                         if wikifolio_price <= 0:
                             raise ValueError
                     except:
@@ -289,16 +289,11 @@ class TrackerApp:
                     })
                     self.portfolio.current_capital -= cost
                     self.portfolio.save()
-                    dlg.open = False
-                    page.dialog = None
+                    page.close(dlg)
                     page.controls.clear()
                     page.controls.extend(self._build_rows(page))
                     page.update()
 
-                def close_dlg(dlg, page):
-                    dlg.open = False
-                    page.dialog = None
-                    page.update()
 
                 action = s.get("action", "")
                 is_missed = "пропущен" in action
