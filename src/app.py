@@ -131,6 +131,7 @@ class TrackerApp:
         """Yield page content rows"""
         s = self.portfolio.summary()
         fmt = "${:,.0f}".format
+        fmt2 = "${:,.2f}".format
         pnl = s["pnl_total"]
 
         # Stats bar

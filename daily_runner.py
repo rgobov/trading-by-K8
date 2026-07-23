@@ -167,11 +167,6 @@ if portfolio.open_positions:
     lines.append("🟡 Открыто:")
     for p in portfolio.open_positions:
         lines.append(f"  {p['ticker']} ${p['cost']:,.0f} ({p['shares']} шт)")
-if sells_to_close:
-    lines.append("")
-    lines.append("🔴 SELL:")
-    for t, ed in sells_to_close:
-        lines.append(f"  {t}")
 if signals_data:
     lines.append("")
     lines.append("🟢 BUY:")
