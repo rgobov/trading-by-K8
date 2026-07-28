@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import flet as ft
 from datetime import date
-from src.config import OUTPUT_DIR
+from src.config import OUTPUT_DIR, BACKTEST_COMMISSION_SELL, BACKTEST_SLIPPAGE
 from src.portfolio import Portfolio
 
 STATE_PATH = os.path.join(OUTPUT_DIR, "portfolio_state.json")
@@ -179,15 +179,12 @@ class TrackerApp:
                             sell_price = float(inp.value)
                         except:
                             return
-                        proceeds = sell_price * pos["shares"]
-                        pnl = proceeds - pos["cost"]
-                        pos["sell_price"] = sell_price
-                        pos["sell_date"] = str(date.today())
-                        pos["pnl"] = pnl
-                        self.portfolio.completed_trades.append(pos)
-                        self.portfolio.open_positions.remove(pos)
-                        self.portfolio.current_capital += proceeds
-                        self.portfolio.save()
+                        result = self.portfolio.close_trade(pos["ticker"], sell_price)
+                        if "note" in result and "pnl" not in result:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Не найдено: {result['note']}"))
+                            page.snack_bar.open = True
+                            page.update()
+                            return
                         page.controls.clear()
                         page.controls.extend(self._build_rows(page))
                         page.update()
@@ -196,7 +193,8 @@ class TrackerApp:
                     def calc(e):
                         try:
                             sp = float(inp.value)
-                            pnl = sp * p["shares"] - p["cost"]
+                            sell_mult = 1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE
+                            pnl = sp * p["shares"] * sell_mult - p["cost"]
                             pnl_t.value = f"{'+' if pnl>=0 else ''}${pnl:,.0f}"
                             pnl_t.color = "green" if pnl >= 0 else "red"
                             page.update()

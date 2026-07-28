@@ -135,11 +135,10 @@ class Backtest:
             for t in new_ops:
                 k = t["k_value"]
                 k_mult = min(k / 1.1, 3.0) if self.k_weighted and k > 0 else 1.0
-                t["pos_frac"] = min(self.max_per_position * k_mult, BACKTEST_MAX_POS_FRAC)
-                # Apply sector volatility weight
+                # Apply sector volatility weight, then cap at MAX_POS_FRAC (50%)
                 sector = sectors_map.get(t["ticker"], "")
                 vol_w = BACKTEST_SECTOR_VOL_WEIGHTS.get(sector, 1.0)
-                t["pos_frac"] *= vol_w
+                t["pos_frac"] = min(self.max_per_position * k_mult * vol_w, BACKTEST_MAX_POS_FRAC)
 
             # Calc capital available after leaving room for open positions
             used_capital = sum(p.get("cost", 0) for p in open_positions)

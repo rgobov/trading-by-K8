@@ -7,7 +7,12 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import yfinance as yf
 
-from src.config import DATA_RAW, DATA_PROCESSED, OUTPUT_DIR
+from src.config import (
+    DATA_RAW, DATA_PROCESSED, OUTPUT_DIR,
+    BACKTEST_SECTOR_VOL_WEIGHTS,
+    BACKTEST_COMMISSION_BUY, BACKTEST_SLIPPAGE,
+    BACKTEST_MAX_CONCURRENT_POSITIONS, BACKTEST_MAX_POS_FRAC,
+)
 from src.earnings_calendar import get_earnings_dates, next_trading_day, prev_trading_day
 from src.portfolio import Portfolio
 
@@ -48,6 +53,9 @@ summary = portfolio.summary()
 # 5. Check earnings dates for candidates
 log("Fetching earnings dates...")
 df_earnings = get_earnings_dates(candidates)
+# Match backtest: use only confirmed (non-estimated) earnings dates
+if "is_estimated" in df_earnings.columns:
+    df_earnings = df_earnings[df_earnings["is_estimated"] == False]
 today = date.today()
 log(f"Today: {today}")
 
@@ -81,11 +89,11 @@ if signal_tickers:
                 except:
                     pass
 
-# K values lookup
+# K values lookup — backtest uses avg_K for sizing
 k_map = {}
-if "latest_K" in df_f.columns:
+if "avg_K" in df_f.columns:
     for _, r in df_f.iterrows():
-        k_map[r["ticker"]] = float(r["latest_K"])
+        k_map[r["ticker"]] = float(r["avg_K"])
 
 buys_today = []
 buys_tomorrow = []
@@ -126,8 +134,11 @@ for _, row in df_rel.iterrows():
             sells_today.append({"ticker": t, "price": round(price, 2), "buy_price": pos.get("buy_price", 0)})
 
     base_share = 0.33
-    k_mult = min(k_value / 1.1, 3.0)
-    pos_share = min(base_share * k_mult, 0.5)
+    k_mult = min(k_value / 1.1, 3.0) if k_value > 0 else 1.0
+    sector = sectors.get(t, "")
+    vol_w = BACKTEST_SECTOR_VOL_WEIGHTS.get(sector, 1.0)
+    # Apply sector volatility weight, then cap at MAX_POS_FRAC (50%) — backtest-equivalent
+    pos_share = min(base_share * k_mult * vol_w, BACKTEST_MAX_POS_FRAC)
 
     # Buy: earnings today (AMC only) — buy at close today
     if ed == today and is_amc:
@@ -140,34 +151,92 @@ for _, row in df_rel.iterrows():
         else:
             raw_signals_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "pos_share": pos_share})
 
-# Second pass: allocate capital with portfolio constraints
-def allocate_signals(signals, capital, max_slots=3):
-    """Allocate capital to signals sorted by K desc, respecting max concurrent and free capital."""
+# Second pass: allocate capital with portfolio constraints (backtest-equivalent)
+def allocate_signals(signals, total_capital, free_capital, open_positions,
+                     max_concurrent=BACKTEST_MAX_CONCURRENT_POSITIONS):
+    """Allocate capital to signals sorted by K desc, mirroring src/backtest.py:
+      - skip tickers already held (open_positions)
+      - max new slots = max_concurrent - len(open_positions)
+      - position size base = total_capital (compounding), capped by free_capital
+      - shares & cost include commission + slippage
+    """
+    open_tickers = {p["ticker"] for p in open_positions}
+    signals = [s for s in signals if s["ticker"] not in open_tickers]
     signals.sort(key=lambda x: x["K"] or 0, reverse=True)
+
+    max_slots = max_concurrent - len(open_positions)
+    if max_slots <= 0:
+        return []
+
     used = 0
     slots = 0
     result = []
     for s in signals:
         if slots >= max_slots:
             break
-        avail = capital - used
+        avail = free_capital - used
         if avail <= 0:
             break
-        target = capital * s["pos_share"]
+        eff_mult = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
+        target = total_capital * s["pos_share"]
         target = min(target, avail)
-        shares = int(target / s["price"]) if s["price"] > 0 else 0
+        shares = int(target / (s["price"] * eff_mult)) if s["price"] > 0 else 0
         if shares < 1:
             continue
-        cost = shares * s["price"]
+        cost = shares * s["price"] * eff_mult
+        if cost > avail:
+            continue
         used += cost
         slots += 1
         result.append({"ticker": s["ticker"], "K": s["K"], "price": s["price"],
                        "size": round(cost, 2), "shares": shares})
     return result
 
+total_capital = summary["current_capital"]
 free_capital = summary["free_capital"]
-buys_today = allocate_signals(raw_signals_today, free_capital)
-buys_tomorrow = allocate_signals(raw_signals_tomorrow, free_capital)
+open_positions = portfolio.open_positions
+
+# Commit SELLs FIRST (frees capital for BUYs), mirroring backtest day loop
+sells_today_unique = []
+seen_sell_tickers = set()
+for s in sells_today:
+    if s["ticker"] in seen_sell_tickers:
+        continue
+    seen_sell_tickers.add(s["ticker"])
+    res = portfolio.close_trade(s["ticker"], s["price"])
+    if "pnl" in res:
+        log(f"SELL {s['ticker']}: buy={s['buy_price']} → sell={s['price']}  pnl=${res['pnl']:.2f}")
+        s["pnl"] = res["pnl"]
+        sells_today_unique.append(s)
+
+sells_today = sells_today_unique
+
+# Allocate BUYs at today state (after sells committed)
+summary = portfolio.summary()
+total_capital = summary["current_capital"]
+free_capital = summary["free_capital"]
+open_positions = portfolio.open_positions
+buys_today = allocate_signals(raw_signals_today, total_capital, free_capital, open_positions)
+
+# Commit BUYs for today (dedup by position already in portfolio)
+today_str = str(today)
+for b in buys_today:
+    existing = portfolio.find_open(b["ticker"])
+    if existing.get("cost", 0) > 0 and existing.get("buy_date", "") == today_str:
+        log(f"SKIP BUY {b['ticker']} — already opened today")
+        continue
+    pos = portfolio.commit_buy(b["ticker"], b["K"], b["price"], b["shares"])
+    if pos.get("shares", 0) >= 1:
+        log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${pos['cost']:.0f}")
+    else:
+        log(f"SKIP BUY {b['ticker']}: {pos.get('note', 'no shares')}")
+
+# Forecast tomorrow's BUYs against post-today state (NOT committed)
+summary = portfolio.summary()
+total_capital = summary["current_capital"]
+free_capital = summary["free_capital"]
+open_positions = portfolio.open_positions
+buys_tomorrow = allocate_signals(raw_signals_tomorrow, total_capital, free_capital, open_positions)
 
 # 7. Generate report
 log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow)")

@@ -102,7 +102,7 @@ log(f"Sectors: {df_f['sector'].value_counts().to_dict()}")
 log("Pass 1 — backtesting all candidates to find repeat offenders...")
 repeat_offenders_path = f"{DATA_PROCESSED}/repeat_offenders.json"
 bt1 = Backtest(initial_capital=1500, k_weighted=True, compounding=False)
-bt1.run_for_candidates(df_f, years=5)
+bt1.run_for_candidates(df_f, years=5, sectors_map=sectors)
 trades = pd.read_csv(f"{DATA_PROCESSED}/backtest_trades.csv")
 pass1_offenders = set()
 for ticker, grp in trades.groupby("ticker"):
@@ -121,7 +121,7 @@ df_f.to_csv(f"{DATA_PROCESSED}/filtered_candidates.csv", index=False)
 results = {}
 for label, compounding in [("compounding", True), ("fixed", False)]:
     bt = Backtest(initial_capital=1500, k_weighted=True, compounding=compounding)
-    bt.run_for_candidates(df_f, years=5)
+    bt.run_for_candidates(df_f, years=5, sectors_map=sectors)
     s = bt.get_summary()
     results[label] = s
     CAGR = ((s["final_capital"] / 1500) ** (1/5) - 1) * 100

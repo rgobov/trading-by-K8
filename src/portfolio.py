@@ -76,6 +76,34 @@ class Portfolio:
         self.save()
         return pos
 
+    def commit_buy(self, ticker: str, k_value: float, buy_price: float,
+                   shares: int) -> dict:
+        """Commit an already-sized buy (backtest-equivalent): shares are
+        computed outside by the caller using backtest sizing rules; here we
+        only record the trade and deduct cost (incl. commission + slippage)
+        from capital."""
+        if shares < 1:
+            return {"ticker": ticker, "note": "no shares", "shares": 0}
+        buy_mult = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
+        cost = round(shares * buy_price * buy_mult, 2)
+        free = self.free_capital()
+        if cost > free:
+            return {"ticker": ticker, "note": f"need ${cost:.0f}, free ${free:.0f}",
+                    "cost": cost, "shares": 0}
+        self.current_capital -= cost
+        pos = {
+            "ticker": ticker,
+            "k_value": round(k_value, 2),
+            "buy_price": round(buy_price, 2),
+            "shares": shares,
+            "cost": cost,
+            "buy_date": str(date.today()),
+            "status": "open",
+        }
+        self.open_positions.append(pos)
+        self.save()
+        return pos
+
     def close_trade(self, ticker: str, sell_price: float) -> dict:
         """Close an open position, add proceeds (net of commission & slippage) to capital"""
         for i, pos in enumerate(self.open_positions):

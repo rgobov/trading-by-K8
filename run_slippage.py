@@ -6,10 +6,13 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 from datetime import datetime
-from src.config import DATA_PROCESSED
+from src.config import DATA_PROCESSED, DATA_RAW
 from src.backtest import Backtest
 
 LOG = f"{DATA_PROCESSED}/slippage_results.txt"
+
+sectors_path = f"{DATA_RAW}/ticker_sectors.json"
+sectors = json.load(open(sectors_path)) if os.path.exists(sectors_path) else {}
 
 results = []
 for years, label in [(3, "3yr"), (5, "5yr")]:
@@ -19,7 +22,8 @@ for years, label in [(3, "3yr"), (5, "5yr")]:
 
         bt.run_for_candidates(
             pd.read_csv(f"{DATA_PROCESSED}/filtered_candidates.csv"),
-            years=years
+            years=years,
+            sectors_map=sectors,
         )
         s = bt.get_summary()
         CAGR = ((s["final_capital"] / 1500) ** (1/years) - 1) * 100
@@ -30,4 +34,3 @@ for years, label in [(3, "3yr"), (5, "5yr")]:
             f.write(line + "\n")
 
 print(f"\nDone. Results in {LOG}")
-PYEOF
