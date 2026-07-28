@@ -230,21 +230,17 @@ class TrackerApp:
                 yield ft.Text("Нет сигналов", italic=True, color="grey")
                 continue
             for s in lst:
-                k = s.get("K", 1.1) or 1.1
-                price = s.get("price", 0) or 0
-                cap = self.portfolio.current_capital
-                k_mult = min(k / 1.1, 3.0)
-                pos_share = min(0.33 * k_mult, 0.5)
-                target_size = cap * pos_share
-                shares = int(target_size / price) if price > 0 else 0
                 note = s.get("note", "")
+                size = s.get("size", 0) or 0
+                shares = s.get("shares", 0) or 0
+                k = s.get("K", 0) or 0
                 btn_color = "grey" if is_missed else "green"
                 btn_text = "⛔ Пропущен" if is_missed else "➕ Купить"
                 yield ft.Row([
                     ft.Text(s.get("ticker", ""), width=80, weight="bold", color="orange" if is_missed else "green"),
-                    ft.Text(f"K={k:.2f}", width=80),
-                    ft.Text(f"${target_size:,.0f}" if target_size else "-", width=100),
-                    ft.Text(f"≈{shares} шт" if shares else "-", width=70),
+                    ft.Text(f"K={k:.2f}" if k else "", width=80),
+                    ft.Text(f"${size:,.0f}" if size else "-", width=100),
+                    ft.Text(f"{shares} шт" if shares else "-", width=70),
                     ft.Text(note, width=200, size=11, color="orange"),
                     ft.ElevatedButton(btn_text, on_click=None, bgcolor=btn_color, color="white", disabled=is_missed),
                 ])

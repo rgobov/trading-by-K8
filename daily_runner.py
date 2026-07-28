@@ -91,6 +91,10 @@ buys_today = []
 buys_tomorrow = []
 sells_today = []
 
+# First pass: collect raw signals by date group
+raw_signals_today = []
+raw_signals_tomorrow = []
+
 for _, row in df_rel.iterrows():
     t = row["ticker"]
     ed_raw = row["date"]
@@ -113,7 +117,7 @@ for _, row in df_rel.iterrows():
     price = prices.get(t)
     if price is None:
         continue
-    k_value = k_map.get(t)
+    k_value = k_map.get(t) or 1.0
 
     # Sell: earnings yesterday
     if ed == prev_day:
@@ -122,21 +126,48 @@ for _, row in df_rel.iterrows():
             sells_today.append({"ticker": t, "price": round(price, 2), "buy_price": pos.get("buy_price", 0)})
 
     base_share = 0.33
-    k_mult = min((k_value or 1.1) / 1.1, 3.0)
+    k_mult = min(k_value / 1.1, 3.0)
     pos_share = min(base_share * k_mult, 0.5)
-    target_size = summary["current_capital"] * pos_share
-    shares = int(target_size / price) if price > 0 else 0
 
     # Buy: earnings today (AMC only) — buy at close today
     if ed == today and is_amc:
-        buys_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "size": round(target_size, 2), "shares": shares})
+        raw_signals_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "pos_share": pos_share})
 
     # Buy: earnings tomorrow — BMO: buy today, AMC: buy tomorrow
     if ed == next_day:
         if is_amc:
-            buys_tomorrow.append({"ticker": t, "K": k_value, "price": round(price, 2), "size": round(target_size, 2), "shares": shares})
+            raw_signals_tomorrow.append({"ticker": t, "K": k_value, "price": round(price, 2), "pos_share": pos_share})
         else:
-            buys_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "size": round(target_size, 2), "shares": shares})
+            raw_signals_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "pos_share": pos_share})
+
+# Second pass: allocate capital with portfolio constraints
+def allocate_signals(signals, capital, max_slots=3):
+    """Allocate capital to signals sorted by K desc, respecting max concurrent and free capital."""
+    signals.sort(key=lambda x: x["K"] or 0, reverse=True)
+    used = 0
+    slots = 0
+    result = []
+    for s in signals:
+        if slots >= max_slots:
+            break
+        avail = capital - used
+        if avail <= 0:
+            break
+        target = capital * s["pos_share"]
+        target = min(target, avail)
+        shares = int(target / s["price"]) if s["price"] > 0 else 0
+        if shares < 1:
+            continue
+        cost = shares * s["price"]
+        used += cost
+        slots += 1
+        result.append({"ticker": s["ticker"], "K": s["K"], "price": s["price"],
+                       "size": round(cost, 2), "shares": shares})
+    return result
+
+free_capital = summary["free_capital"]
+buys_today = allocate_signals(raw_signals_today, free_capital)
+buys_tomorrow = allocate_signals(raw_signals_tomorrow, free_capital)
 
 # 7. Generate report
 log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow)")
