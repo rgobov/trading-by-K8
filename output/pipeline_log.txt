@@ -664,3 +664,30 @@
 [20:57:45]   Compounding        4820.6%  118.0% 60.2%   34.9%    595
 [20:57:45] ====================================================================
 [20:57:45] === PIPELINE COMPLETE ===
+[21:12:58] === OVERNIGHT PIPELINE START ===
+[21:12:58] Russell 1000 tickers: 1014
+[21:12:58] Sectors needed: 0
+[21:12:58] SEC parsed already: 1014, need: 0
+[21:12:58] SEC parsed total: 1014
+[21:12:58] Calculating K (sector-competitive)...
+[21:13:07] K ratings: 929. Top: ['REXR', 'AVB', 'LCID', 'UDR', 'QXO']
+[21:13:07] Filtering candidates...
+[21:13:07] Candidates: 62
+[21:13:07] Sectors: {'Industrials': 23, 'Technology': 18, 'Consumer Defensive': 11, 'Communication Services': 10}
+[21:13:07] Pass 1 — backtesting all candidates to find repeat offenders...
+[21:13:30] Pass 1 repeat offenders (10): ['BG', 'BRBR', 'FDX', 'GGG', 'MRVL', 'MSM', 'MU', 'NFLX', 'PATH', 'ZM']
+[21:13:30] Pass 2 candidates: 52
+[21:13:31]   compounding: return=15224.23% CAGR=173.57% trades=614 win=59.8%
+[21:13:33]   fixed: return=620.64% CAGR=48.44% trades=636 win=58.6%
+[21:13:33] 
+====================================================================
+[21:13:33]   FINAL SUMMARY
+[21:13:33] ====================================================================
+[21:13:33]   Russell 1000 parsed:   1014/1014
+[21:13:33]   Candidates:            52
+[21:13:33]   Strategy            Return    CAGR    WR      DD  Trades
+[21:13:33]   --------------- ---------- ------- ----- ------- -------
+[21:13:33]   Fixed               620.6%   48.4% 58.6%   28.9%    636
+[21:13:33]   Compounding       15224.2%  173.6% 59.8%   35.2%    614
+[21:13:33] ====================================================================
+[21:13:33] === PIPELINE COMPLETE ===
