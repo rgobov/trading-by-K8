@@ -72,7 +72,7 @@ class Backtest:
         raw_trades = []
         for _, cand in candidates.iterrows():
             ticker = cand["ticker"]
-            k_value = cand.get("avg_K", 1.0)
+            k_value = cand.get("latest_K", 1.0)
             ticker_earnings = df_earnings[df_earnings["ticker"] == ticker]
             for _, ear in ticker_earnings.iterrows():
                 earnings_date = ear["date"]

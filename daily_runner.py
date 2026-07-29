@@ -98,11 +98,11 @@ if signal_tickers:
                 except:
                     pass
 
-# K values lookup — backtest uses avg_K for sizing
+# K values lookup — use latest_K for live sizing
 k_map = {}
-if "avg_K" in df_f.columns:
+if "latest_K" in df_f.columns:
     for _, r in df_f.iterrows():
-        k_map[r["ticker"]] = float(r["avg_K"])
+        k_map[r["ticker"]] = float(r["latest_K"])
 
 buys_today = []
 buys_tomorrow = []
