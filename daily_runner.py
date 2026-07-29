@@ -157,6 +157,7 @@ for _, row in df_rel.iterrows():
     # Missed: earnings today BMO — gap already happened at open, cannot buy
     if ed == today and not is_amc:
         buys_missed.append({"ticker": t, "K": k_value, "price": round(price, 2),
+                             "pos_share": pos_share,
                              "note": "BMO today — gap already happened"})
 
     # Buy: earnings tomorrow — BMO: buy today, AMC: buy tomorrow
@@ -204,7 +205,7 @@ def allocate_signals(signals, total_capital, free_capital, open_positions,
         used += cost
         slots += 1
         result.append({"ticker": s["ticker"], "K": s["K"], "price": s["price"],
-                       "size": round(cost, 2), "shares": shares})
+                       "size": round(cost, 2), "shares": shares, "pos_share": s["pos_share"]})
     return result
 
 total_capital = summary["current_capital"]

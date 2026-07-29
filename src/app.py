@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import flet as ft
 from datetime import date
-from src.config import OUTPUT_DIR, BACKTEST_COMMISSION_SELL, BACKTEST_SLIPPAGE
+from src.config import OUTPUT_DIR, BACKTEST_COMMISSION_BUY, BACKTEST_COMMISSION_SELL, BACKTEST_SLIPPAGE
 from src.portfolio import Portfolio
 
 STATE_PATH = os.path.join(OUTPUT_DIR, "portfolio_state.json")
@@ -229,9 +229,18 @@ class TrackerApp:
                 continue
             for s in lst:
                 note = s.get("note", "")
-                size = s.get("size", 0) or 0
-                shares = s.get("shares", 0) or 0
+                pos_share = s.get("pos_share", 0) or 0
+                price = s.get("price", 0) or 0
                 k = s.get("K", 0) or 0
+                if pos_share > 0 and price > 0:
+                    eff = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
+                    cap = self.portfolio.current_capital
+                    target = cap * pos_share
+                    shares = int(target / (price * eff)) if price > 0 else 0
+                    size = round(shares * price * eff, 2) if shares > 0 else 0
+                else:
+                    size = s.get("size", 0) or 0
+                    shares = s.get("shares", 0) or 0
                 btn_color = "grey" if is_missed else "green"
                 btn_text = "⛔ Пропущен" if is_missed else "➕ Купить"
                 yield ft.Row([
