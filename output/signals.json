@@ -1,0 +1,78 @@
+{
+  "date": "2026-07-29",
+  "sells": [],
+  "buys_today": [
+    {
+      "ticker": "FTAI",
+      "K": 1.9283,
+      "price": 204.72,
+      "size": 50839.1,
+      "shares": 248
+    },
+    {
+      "ticker": "CRS",
+      "K": 0.7167,
+      "price": 541.46,
+      "size": 42290.9,
+      "shares": 78
+    }
+  ],
+  "buys_tomorrow": [
+    {
+      "ticker": "RDDT",
+      "K": 4.4897,
+      "price": 182.98,
+      "size": 8794.9,
+      "shares": 48
+    }
+  ],
+  "buys_missed": [
+    {
+      "ticker": "BG",
+      "K": 3.963,
+      "price": 109.73,
+      "note": "BMO today \u2014 gap already happened"
+    },
+    {
+      "ticker": "VRT",
+      "K": 1.2128,
+      "price": 224.68,
+      "note": "BMO today \u2014 gap already happened"
+    }
+  ],
+  "portfolio": {
+    "initial_capital": 1500,
+    "current_capital": 102000,
+    "free_capital": 8870.0,
+    "open_count": 2,
+    "total_trades": 0,
+    "pnl_total": 0
+  },
+  "repeat_offenders": [
+    "MRVL",
+    "MSM",
+    "MU",
+    "PATH",
+    "POST"
+  ],
+  "open_positions": [
+    {
+      "ticker": "FTAI",
+      "k_value": 1.93,
+      "buy_price": 204.72,
+      "shares": 248,
+      "cost": 50839.1,
+      "buy_date": "2026-07-29",
+      "status": "open"
+    },
+    {
+      "ticker": "CRS",
+      "k_value": 0.72,
+      "buy_price": 541.46,
+      "shares": 78,
+      "cost": 42290.9,
+      "buy_date": "2026-07-29",
+      "status": "open"
+    }
+  ]
+}
