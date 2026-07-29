@@ -233,18 +233,33 @@ free_capital = summary["free_capital"]
 open_positions = portfolio.open_positions
 buys_today = allocate_signals(raw_signals_today, total_capital, free_capital, open_positions)
 
-# Commit BUYs for today (dedup by position already in portfolio)
+# Commit BUYs atomically (mirroring backtest: capital unchanged during buy,
+# positions tracked in open_positions, free_capital = capital - sum(cost))
 today_str = str(today)
-for b in buys_today:
-    existing = portfolio.find_open(b["ticker"])
-    if existing.get("cost", 0) > 0 and existing.get("buy_date", "") == today_str:
-        log(f"SKIP BUY {b['ticker']} — already opened today")
-        continue
-    pos = portfolio.commit_buy(b["ticker"], b["K"], b["price"], b["shares"])
-    if pos.get("shares", 0) >= 1:
-        log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${pos['cost']:.0f}")
+already_open = {p["ticker"] for p in portfolio.open_positions}
+committable = [b for b in buys_today if b["ticker"] not in already_open]
+if committable:
+    total_cost = round(sum(b["size"] for b in committable), 2)
+    free = portfolio.free_capital()
+    if total_cost <= free:
+        for b in committable:
+            pos = {
+                "ticker": b["ticker"],
+                "k_value": round(b["K"], 2) if b["K"] else 0,
+                "buy_price": round(b["price"], 2),
+                "shares": b["shares"],
+                "cost": b["size"],
+                "buy_date": today_str,
+                "status": "open",
+            }
+            portfolio.open_positions.append(pos)
+            log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${b['size']:.0f}")
+        portfolio.save()
     else:
-        log(f"SKIP BUY {b['ticker']}: {pos.get('note', 'no shares')}")
+        log(f"SKIP all BUYs: total ${total_cost:.0f} needed, free ${free:.0f}")
+        buys_today = []
+else:
+    buys_today = []
 
 # Forecast tomorrow's BUYs against post-today state (NOT committed)
 summary = portfolio.summary()

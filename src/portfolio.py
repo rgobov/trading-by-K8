@@ -80,8 +80,8 @@ class Portfolio:
                    shares: int) -> dict:
         """Commit an already-sized buy (backtest-equivalent): shares are
         computed outside by the caller using backtest sizing rules; here we
-        only record the trade and deduct cost (incl. commission + slippage)
-        from capital."""
+        only record the trade — capital is NEVER reduced at buy (mirrors
+        backtest), cost is tracked in open_positions for PnL calculation at sell."""
         if shares < 1:
             return {"ticker": ticker, "note": "no shares", "shares": 0}
         buy_mult = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
@@ -90,7 +90,6 @@ class Portfolio:
         if cost > free:
             return {"ticker": ticker, "note": f"need ${cost:.0f}, free ${free:.0f}",
                     "cost": cost, "shares": 0}
-        self.current_capital -= cost
         pos = {
             "ticker": ticker,
             "k_value": round(k_value, 2),
@@ -105,13 +104,15 @@ class Portfolio:
         return pos
 
     def close_trade(self, ticker: str, sell_price: float) -> dict:
-        """Close an open position, add proceeds (net of commission & slippage) to capital"""
+        """Close an open position, add P&L (net of commission & slippage) to capital.
+        Mirrors backtest: current_capital is NEVER reduced at buy time (cost is
+        tracked in open_positions); at sell we add pnl = proceeds - cost."""
         for i, pos in enumerate(self.open_positions):
             if pos["ticker"] == ticker:
                 sell_mult = 1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE
                 proceeds = round(pos["shares"] * sell_price * sell_mult, 2)
                 pnl = round(proceeds - pos["cost"], 2)
-                self.current_capital += proceeds
+                self.current_capital += pnl
                 pos["sell_price"] = round(sell_price, 2)
                 pos["sell_date"] = str(date.today())
                 pos["pnl"] = pnl
