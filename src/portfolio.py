@@ -1,7 +1,7 @@
 """Portfolio state management: track capital, positions, generate signals"""
 import json, os
 from datetime import datetime, date
-from src.config import OUTPUT_DIR, BACKTEST_COMMISSION_BUY, BACKTEST_COMMISSION_SELL, BACKTEST_SLIPPAGE
+from src.config import OUTPUT_DIR, BACKTEST_COMMISSION_BUY, BACKTEST_COMMISSION_SELL, BACKTEST_SLIPPAGE, BACKTEST_MARGIN_RATE, DEFAULT_UNIVERSE, DEFAULT_LEVERAGE
 
 STATE_PATH = os.path.join(OUTPUT_DIR, "portfolio_state.json")
 
@@ -12,6 +12,8 @@ class Portfolio:
         self.current_capital = initial_capital
         self.open_positions: list[dict] = []
         self.completed_trades: list[dict] = []
+        self.universe = DEFAULT_UNIVERSE
+        self.leverage = DEFAULT_LEVERAGE
         self._load()
 
     def _load(self):
@@ -22,6 +24,8 @@ class Portfolio:
             self.current_capital = data.get("current_capital", self.initial_capital)
             self.open_positions = data.get("open_positions", [])
             self.completed_trades = data.get("completed_trades", [])
+            self.universe = data.get("universe", DEFAULT_UNIVERSE)
+            self.leverage = data.get("leverage", DEFAULT_LEVERAGE)
         else:
             self.save()
 
@@ -33,6 +37,8 @@ class Portfolio:
                 "current_capital": self.current_capital,
                 "open_positions": self.open_positions,
                 "completed_trades": self.completed_trades,
+                "universe": self.universe,
+                "leverage": self.leverage,
                 "last_update": str(date.today()),
             }, f, indent=2)
 
@@ -77,7 +83,7 @@ class Portfolio:
         return pos
 
     def commit_buy(self, ticker: str, k_value: float, buy_price: float,
-                   shares: int) -> dict:
+                   shares: int, leverage: float = None) -> dict:
         """Commit an already-sized buy (backtest-equivalent): shares are
         computed outside by the caller using backtest sizing rules; here we
         only record the trade — capital is NEVER reduced at buy (mirrors
@@ -86,9 +92,10 @@ class Portfolio:
             return {"ticker": ticker, "note": "no shares", "shares": 0}
         buy_mult = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
         cost = round(shares * buy_price * buy_mult, 2)
+        own_cost = cost / (1 + (leverage if leverage is not None else self.leverage))
         free = self.free_capital()
-        if cost > free:
-            return {"ticker": ticker, "note": f"need ${cost:.0f}, free ${free:.0f}",
+        if own_cost > free:
+            return {"ticker": ticker, "note": f"need ${own_cost:.0f} own capital, free ${free:.0f}",
                     "cost": cost, "shares": 0}
         pos = {
             "ticker": ticker,
@@ -96,6 +103,7 @@ class Portfolio:
             "buy_price": round(buy_price, 2),
             "shares": shares,
             "cost": cost,
+            "leverage": leverage if leverage is not None else self.leverage,
             "buy_date": str(date.today()),
             "status": "open",
         }
@@ -106,12 +114,24 @@ class Portfolio:
     def close_trade(self, ticker: str, sell_price: float) -> dict:
         """Close an open position, add P&L (net of commission & slippage) to capital.
         Mirrors backtest: current_capital is NEVER reduced at buy time (cost is
-        tracked in open_positions); at sell we add pnl = proceeds - cost."""
+        tracked in open_positions); at sell we add pnl = proceeds - cost.
+        If leverage > 0, margin cost is deducted from PnL."""
         for i, pos in enumerate(self.open_positions):
             if pos["ticker"] == ticker:
                 sell_mult = 1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE
                 proceeds = round(pos["shares"] * sell_price * sell_mult, 2)
                 pnl = round(proceeds - pos["cost"], 2)
+                lev = pos.get("leverage", 0)
+                if lev > 0:
+                    buy_date_str = pos.get("buy_date", str(date.today()))
+                    try:
+                        bd = datetime.strptime(buy_date_str, "%Y-%m-%d").date() if isinstance(buy_date_str, str) else date.today()
+                    except:
+                        bd = date.today()
+                    hold_days = max((date.today() - bd).days, 1)
+                    borrowed = pos["cost"] * (1 - 1 / (1 + lev))
+                    margin_cost = borrowed * BACKTEST_MARGIN_RATE * hold_days / 365
+                    pnl = round(pnl - margin_cost, 2)
                 self.current_capital += pnl
                 pos["sell_price"] = round(sell_price, 2)
                 pos["sell_date"] = str(date.today())
@@ -130,7 +150,7 @@ class Portfolio:
         return {"ticker": ticker, "note": "not found"}
 
     def free_capital(self) -> float:
-        used = sum(p["cost"] for p in self.open_positions)
+        used = sum(p["cost"] / (1 + p.get("leverage", 0)) for p in self.open_positions)
         return self.current_capital - used
 
     def summary(self) -> dict:

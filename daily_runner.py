@@ -12,9 +12,10 @@ from src.config import (
     BACKTEST_SECTOR_VOL_WEIGHTS,
     BACKTEST_COMMISSION_BUY, BACKTEST_SLIPPAGE,
     BACKTEST_MAX_CONCURRENT_POSITIONS, BACKTEST_MAX_POS_FRAC,
+    DEFAULT_UNIVERSE, DEFAULT_LEVERAGE,
 )
 from src.earnings_calendar import get_earnings_dates, next_trading_day, prev_trading_day
-from src.portfolio import Portfolio
+from src.portfolio import Portfolio, STATE_PATH
 
 LOG = os.path.join(OUTPUT_DIR, "daily_runner.log")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -27,15 +28,26 @@ def log(msg):
 
 log("=== DAILY RUNNER ===")
 
+# 0. Load settings (universe, leverage) from portfolio state
+portfolio_state = {}
+if os.path.exists(STATE_PATH):
+    with open(STATE_PATH) as f:
+        portfolio_state = json.load(f)
+universe = portfolio_state.get("universe", DEFAULT_UNIVERSE)
+leverage = portfolio_state.get("leverage", DEFAULT_LEVERAGE)
+log(f"Settings: universe={universe}, leverage={leverage*100:.0f}%")
+
 # 1. Load cached candidates from overnight pipeline (pass 2 — clean)
-candidates_path = f"{DATA_PROCESSED}/filtered_candidates.csv"
+candidates_path = f"{DATA_PROCESSED}/filtered_candidates_{universe}.csv"
 if not os.path.exists(candidates_path):
-    log("No candidates found — run overnight_pipeline first")
-    sys.exit(0)
+    candidates_path = f"{DATA_PROCESSED}/filtered_candidates.csv"  # fallback to default
+    if not os.path.exists(candidates_path):
+        log("No candidates found — run overnight_pipeline first")
+        sys.exit(0)
 
 df_f = pd.read_csv(candidates_path)
 candidates = df_f["ticker"].tolist()
-log(f"Candidates loaded: {len(candidates)}")
+log(f"Candidates loaded ({universe}): {len(candidates)}")
 
 # 2. Load repeat offenders to flag (not exclude — they already excluded from df_f)
 repeat_offenders_path = f"{DATA_PROCESSED}/repeat_offenders.json"
@@ -169,11 +181,13 @@ for _, row in df_rel.iterrows():
 
 # Second pass: allocate capital with portfolio constraints (backtest-equivalent)
 def allocate_signals(signals, total_capital, free_capital, open_positions,
-                     max_concurrent=BACKTEST_MAX_CONCURRENT_POSITIONS):
+                     max_concurrent=BACKTEST_MAX_CONCURRENT_POSITIONS,
+                     leverage=0.0):
     """Allocate capital to signals sorted by K desc, mirroring src/backtest.py:
       - skip tickers already held (open_positions)
       - max new slots = max_concurrent - len(open_positions)
-      - position size base = total_capital (compounding), capped by free_capital
+      - position size = total_capital * pos_share * (1 + leverage)
+      - own capital consumed = cost / (1 + leverage)
       - shares & cost include commission + slippage
     """
     open_tickers = {p["ticker"] for p in open_positions}
@@ -184,6 +198,7 @@ def allocate_signals(signals, total_capital, free_capital, open_positions,
     if max_slots <= 0:
         return []
 
+    lev_mult = 1 + leverage
     used = 0
     slots = 0
     result = []
@@ -194,18 +209,20 @@ def allocate_signals(signals, total_capital, free_capital, open_positions,
         if avail <= 0:
             break
         eff_mult = 1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE
-        target = total_capital * s["pos_share"]
-        target = min(target, avail)
+        target = total_capital * s["pos_share"] * lev_mult
+        target = min(target, avail * lev_mult)
         shares = int(target / (s["price"] * eff_mult)) if s["price"] > 0 else 0
         if shares < 1:
             continue
         cost = shares * s["price"] * eff_mult
-        if cost > avail:
+        own_cost = cost / lev_mult
+        if own_cost > avail:
             continue
-        used += cost
+        used += own_cost
         slots += 1
         result.append({"ticker": s["ticker"], "K": s["K"], "price": s["price"],
-                       "size": round(cost, 2), "shares": shares, "pos_share": s["pos_share"]})
+                       "size": round(cost, 2), "shares": shares,
+                       "pos_share": s["pos_share"], "leverage": leverage})
     return result
 
 total_capital = summary["current_capital"]
@@ -232,17 +249,19 @@ summary = portfolio.summary()
 total_capital = summary["current_capital"]
 free_capital = summary["free_capital"]
 open_positions = portfolio.open_positions
-buys_today = allocate_signals(raw_signals_today, total_capital, free_capital, open_positions)
+buys_today = allocate_signals(raw_signals_today, total_capital, free_capital,
+                              open_positions, leverage=leverage)
 
 # Commit BUYs atomically (mirroring backtest: capital unchanged during buy,
-# positions tracked in open_positions, free_capital = capital - sum(cost))
+# positions tracked in open_positions, free_capital = capital - sum(own_cost))
 today_str = str(today)
 already_open = {p["ticker"] for p in portfolio.open_positions}
 committable = [b for b in buys_today if b["ticker"] not in already_open]
 if committable:
-    total_cost = round(sum(b["size"] for b in committable), 2)
+    lev_mult = 1 + leverage
+    total_own = round(sum(b["size"] / lev_mult for b in committable), 2)
     free = portfolio.free_capital()
-    if total_cost <= free:
+    if total_own <= free:
         for b in committable:
             pos = {
                 "ticker": b["ticker"],
@@ -250,14 +269,15 @@ if committable:
                 "buy_price": round(b["price"], 2),
                 "shares": b["shares"],
                 "cost": b["size"],
+                "leverage": leverage,
                 "buy_date": today_str,
                 "status": "open",
             }
             portfolio.open_positions.append(pos)
-            log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${b['size']:.0f}")
+            log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${b['size']:.0f}  own=${b['size']/lev_mult:.0f}  lev={leverage*100:.0f}%")
         portfolio.save()
     else:
-        log(f"SKIP all BUYs: total ${total_cost:.0f} needed, free ${free:.0f}")
+        log(f"SKIP all BUYs: total own ${total_own:.0f} needed, free ${free:.0f}")
         buys_today = []
 else:
     buys_today = []
@@ -267,7 +287,8 @@ summary = portfolio.summary()
 total_capital = summary["current_capital"]
 free_capital = summary["free_capital"]
 open_positions = portfolio.open_positions
-buys_tomorrow = allocate_signals(raw_signals_tomorrow, total_capital, free_capital, open_positions)
+buys_tomorrow = allocate_signals(raw_signals_tomorrow, total_capital, free_capital,
+                                  open_positions, leverage=leverage)
 
 # 7. Generate report
 log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow), {len(buys_missed)} missed (BMO)")
@@ -324,6 +345,8 @@ signals = {
     "portfolio": summary,
     "repeat_offenders": repeat_offenders,
     "open_positions": portfolio.open_positions,
+    "universe": universe,
+    "leverage": leverage,
 }
 with open(f"{OUTPUT_DIR}/signals.json", "w") as f:
     json.dump(signals, f, indent=2, default=str)

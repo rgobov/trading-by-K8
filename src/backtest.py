@@ -10,6 +10,7 @@ from src.config import (
     BACKTEST_MAX_POS_FRAC,
     BACKTEST_MAX_CONCURRENT_POSITIONS,
     BACKTEST_SECTOR_VOL_WEIGHTS,
+    BACKTEST_MARGIN_RATE,
     DATA_PROCESSED,
 )
 from src.earnings_calendar import get_earnings_dates, get_earnings_bounds
@@ -22,12 +23,14 @@ class Backtest:
         max_per_position: float = BACKTEST_MAX_DEPOSIT_PER_POSITION,
         k_weighted: bool = True,
         compounding: bool = True,
+        leverage: float = 1.0,
     ):
         self.initial_capital = initial_capital
         self.capital = initial_capital
         self.max_per_position = max_per_position
         self.k_weighted = k_weighted
         self.compounding = compounding
+        self.leverage = leverage
         self.trades: list[dict] = []
         self.equity_curve: list[float] = [initial_capital]
         self._price_cache: dict[str, pd.DataFrame] = {}
@@ -141,7 +144,7 @@ class Backtest:
                 t["pos_frac"] = min(self.max_per_position * k_mult * vol_w, BACKTEST_MAX_POS_FRAC)
 
             # Calc capital available after leaving room for open positions
-            used_capital = sum(p.get("cost", 0) for p in open_positions)
+            used_capital = sum(p.get("cost", 0) / self.leverage for p in open_positions)
             avail = self.capital - used_capital
 
             # How many can we open? Max N - len(open_positions)
@@ -162,10 +165,10 @@ class Backtest:
                     continue
 
                 base = self.capital if self.compounding else self.initial_capital
-                pos_size = base * t["pos_frac"]
+                pos_size = base * t["pos_frac"] * self.leverage
 
-                # Check can afford
-                pos_size = min(pos_size, avail)
+                # Check can afford (avail = own capital available)
+                pos_size = min(pos_size, avail * self.leverage)
                 shares = int(pos_size / buy_price)
                 if shares < 1:
                     continue
@@ -173,7 +176,8 @@ class Backtest:
                     continue
 
                 cost = shares * buy_price * (1 + BACKTEST_COMMISSION_BUY + BACKTEST_SLIPPAGE)
-                if cost > avail or np.isnan(cost):
+                own_used = cost / self.leverage
+                if own_used > avail or np.isnan(cost):
                     continue
 
                 pos = {
@@ -190,7 +194,7 @@ class Backtest:
                     "pnl_pct": None,
                 }
                 open_positions.append(pos)
-                avail -= cost
+                avail -= cost / self.leverage
                 opened += 1
 
         self._summarize()
@@ -227,6 +231,15 @@ class Backtest:
 
         proceeds = shares * sell_price * (1 - BACKTEST_COMMISSION_SELL - BACKTEST_SLIPPAGE)
         pnl = proceeds - cost
+
+        # Margin cost: only if leverage > 1
+        margin_cost = 0
+        if self.leverage > 1:
+            hold_days = max((sell_date - pos["buy_date"]).days, 1)
+            borrowed = cost * (1 - 1 / self.leverage)
+            margin_cost = borrowed * BACKTEST_MARGIN_RATE * hold_days / 365
+
+        pnl -= margin_cost
         pnl_pct = (proceeds / cost - 1) * 100
 
         pos["sell_price"] = sell_price

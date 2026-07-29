@@ -1,0 +1,31 @@
+ticker,avg_K,latest_K,quarters_above,K_trend,sector
+NVDA,3.1437,9.7975,3,declining,Technology
+MRVL,1.9061,3.1387,3,stable,Technology
+MU,1.4126,7.5223,3,declining,Technology
+DELL,0.9933,2.2325,3,stable,Technology
+SMCI,0.9096,3.8666,3,declining,Technology
+PLTR,0.9083,4.2719,3,stable,Technology
+PAYX,0.8422,1.9246,3,stable,Technology
+WDAY,0.6366,1.4037,3,declining,Technology
+GOOG,2.3458,31.1078,3,declining,Communication Services
+GOOGL,2.3458,31.1078,3,declining,Communication Services
+TDG,1.1122,3.8411,2,declining,Industrials
+BG,1.1095,3.963,2,declining,Consumer Defensive
+APP,0.8569,2.5927,3,declining,Communication Services
+AXON,0.7967,1.2449,2,declining,Industrials
+MNST,0.6958,1.3712,3,stable,Consumer Defensive
+NFLX,0.6955,1.8832,3,declining,Communication Services
+GEV,0.6836,1.3615,2,declining,Industrials
+FAST,0.6739,2.2012,2,declining,Industrials
+STZ,0.6266,1.2127,2,stable,Consumer Defensive
+HWM,0.6259,1.2758,2,stable,Industrials
+VRT,0.6129,1.2128,2,stable,Industrials
+COST,0.6123,1.2733,2,declining,Consumer Defensive
+FIX,0.5943,2.1055,2,declining,Industrials
+TTWO,0.5825,1.278,2,stable,Communication Services
+FDX,0.5457,1.2866,3,declining,Industrials
+MKC,0.5412,1.1831,2,declining,Consumer Defensive
+FOXA,0.5218,1.7272,2,declining,Communication Services
+FOX,0.5218,1.7272,2,declining,Communication Services
+NWSA,0.4076,1.3851,2,declining,Communication Services
+NWS,0.4076,1.3851,2,declining,Communication Services
