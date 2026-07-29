@@ -4,25 +4,20 @@ NVDA,3.1437,9.7975,3,declining,Technology
 DELL,0.9933,2.2325,3,stable,Technology
 RBRK,0.9419,2.2417,3,declining,Technology
 SMCI,0.9096,3.8666,3,declining,Technology
-PLTR,0.9083,4.2719,3,stable,Technology
-ZM,0.8933,2.6729,3,stable,Technology
 MDB,0.8749,2.6177,3,declining,Technology
 PAYX,0.8422,1.9246,3,stable,Technology
-IOT,0.7399,2.2089,3,declining,Technology
 SNOW,0.6937,1.4083,3,stable,Technology
 GTLB,0.6758,2.0888,3,declining,Technology
 P,0.6449,1.8237,3,declining,Technology
 WDAY,0.6366,1.4037,3,declining,Technology
 S,0.5423,1.3135,3,stable,Technology
 QXO,16.7677,94.6489,3,declining,Industrials
-AVAV,6.4347,37.4439,3,declining,Industrials
 GOOG,2.3458,31.1078,3,declining,Communication Services
 GOOGL,2.3458,31.1078,3,declining,Communication Services
 RDDT,2.0305,4.4897,3,stable,Communication Services
 CELH,1.3936,1.7536,3,stable,Consumer Defensive
 LOAR,1.1207,1.6984,2,stable,Industrials
 TDG,1.1122,3.8411,2,declining,Industrials
-BG,1.1095,3.963,2,declining,Consumer Defensive
 LOPE,1.0832,1.1781,2,stable,Consumer Defensive
 ELF,1.0066,1.6755,3,stable,Consumer Defensive
 RBC,1.0052,1.7514,3,stable,Industrials
@@ -32,18 +27,15 @@ CRS,0.8848,0.7167,2,stable,Industrials
 APP,0.8569,2.5927,3,declining,Communication Services
 MLI,0.8563,1.3635,3,stable,Industrials
 FTAI,0.8494,1.9283,2,declining,Industrials
-BRBR,0.8198,1.5909,2,declining,Consumer Defensive
 AXON,0.7967,1.2449,2,declining,Industrials
 WMS,0.7839,1.5494,2,stable,Industrials
 HEI,0.718,1.1293,3,stable,Industrials
 MNST,0.6958,1.3712,3,stable,Consumer Defensive
-NFLX,0.6955,1.8832,3,declining,Communication Services
 RBA,0.6864,0.7611,2,stable,Industrials
 GEV,0.6836,1.3615,2,declining,Industrials
 FAST,0.6739,2.2012,2,declining,Industrials
 POST,0.6593,1.3079,2,stable,Consumer Defensive
 GGG,0.6365,2.0385,2,declining,Industrials
-STZ,0.6266,1.2127,2,stable,Consumer Defensive
 HWM,0.6259,1.2758,2,stable,Industrials
 NVT,0.6215,1.2786,2,stable,Industrials
 VRT,0.6129,1.2128,2,stable,Industrials

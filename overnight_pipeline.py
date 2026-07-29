@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 from datetime import datetime
 
-from src.config import DATA_RAW, DATA_PROCESSED, OUTPUT_DIR, FILTER_EXCLUDE_SECTORS
+from src.config import DATA_RAW, DATA_PROCESSED, OUTPUT_DIR, FILTER_EXCLUDE_SECTORS, BACKTEST_RECIDIVIST_MIN_WIN_RATE as RECIDIVIST_MIN_WR
 from src.edgar_parser import get_fundamentals
 from src.calculator import run_k_all
 from src.filter import filter_by_k_stability
@@ -106,7 +106,7 @@ bt1.run_for_candidates(df_f, years=5, sectors_map=sectors)
 trades = pd.read_csv(f"{DATA_PROCESSED}/backtest_trades.csv")
 pass1_offenders = set()
 for ticker, grp in trades.groupby("ticker"):
-    if len(grp) >= 10 and (grp["pnl"] > 0).mean() < 0.40:
+    if len(grp) >= 10 and (grp["pnl"] > 0).mean() < RECIDIVIST_MIN_WR:
         pass1_offenders.add(ticker)
 
 log(f"Pass 1 repeat offenders ({len(pass1_offenders)}): {sorted(pass1_offenders) if pass1_offenders else 'none'}")

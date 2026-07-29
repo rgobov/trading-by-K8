@@ -38,6 +38,7 @@ BACKTEST_SECTOR_VOL_WEIGHTS = {
 }
 
 BACKTEST_MAX_POS_FRAC = 0.50  # кэп: макс 50% на одну позицию (K-вес × sector vol)
+BACKTEST_RECIDIVIST_MIN_WIN_RATE = 0.50  # порог win rate для фильтра рецидивистов (< этого значения при >= 10 сделках)
 BACKTEST_COMMISSION_BUY = 0.00035
 BACKTEST_COMMISSION_SELL = 0.00035
 BACKTEST_SLIPPAGE = 0.001  # 0.1% slippage per trade
