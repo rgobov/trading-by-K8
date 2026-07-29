@@ -106,6 +106,7 @@ if "avg_K" in df_f.columns:
 
 buys_today = []
 buys_tomorrow = []
+buys_missed = []
 sells_today = []
 
 # First pass: collect raw signals by date group
@@ -152,6 +153,11 @@ for _, row in df_rel.iterrows():
     # Buy: earnings today (AMC only) — buy at close today
     if ed == today and is_amc:
         raw_signals_today.append({"ticker": t, "K": k_value, "price": round(price, 2), "pos_share": pos_share})
+
+    # Missed: earnings today BMO — gap already happened at open, cannot buy
+    if ed == today and not is_amc:
+        buys_missed.append({"ticker": t, "K": k_value, "price": round(price, 2),
+                             "note": "BMO today — gap already happened"})
 
     # Buy: earnings tomorrow — BMO: buy today, AMC: buy tomorrow
     if ed == next_day:
@@ -248,7 +254,7 @@ open_positions = portfolio.open_positions
 buys_tomorrow = allocate_signals(raw_signals_tomorrow, total_capital, free_capital, open_positions)
 
 # 7. Generate report
-log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow)")
+log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow), {len(buys_missed)} missed (BMO)")
 
 lines = []
 lines.append(f"ISTS Signals — {today}")
@@ -277,7 +283,14 @@ if buys_tomorrow:
         lines.append(f"  {b['ticker']:6s} ${b['price']:.2f}  {k_str}")
         log(f"BUY {b['ticker']}: AMC earnings {next_day}, buy on {next_day}, price=${b['price']}")
 
-if not sells_today and not buys_today and not buys_tomorrow:
+if buys_missed:
+    lines.append("MISSED today (BMO — gap already happened):")
+    for b in buys_missed:
+        k_str = f"K={b['K']:.2f}" if b['K'] else ""
+        lines.append(f"  {b['ticker']:6s} ${b['price']:.2f}  {k_str}")
+        log(f"MISS {b['ticker']}: BMO today, gap already happened, price=${b['price']}")
+
+if not sells_today and not buys_today and not buys_tomorrow and not buys_missed:
     lines.append("No signals today")
 
 lines.append("-" * 40)
@@ -291,6 +304,7 @@ signals = {
     "sells": sells_today,
     "buys_today": buys_today,
     "buys_tomorrow": buys_tomorrow,
+    "buys_missed": buys_missed,
     "portfolio": summary,
     "repeat_offenders": repeat_offenders,
     "open_positions": portfolio.open_positions,
