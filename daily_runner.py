@@ -53,11 +53,20 @@ summary = portfolio.summary()
 # 5. Check earnings dates for candidates
 log("Fetching earnings dates...")
 df_earnings = get_earnings_dates(candidates)
-# Match backtest: use only confirmed (non-estimated) earnings dates
-if "is_estimated" in df_earnings.columns:
-    df_earnings = df_earnings[df_earnings["is_estimated"] == False]
 today = date.today()
 log(f"Today: {today}")
+# Keep confirmed past earnings (is_estimated=False, backtest-compatible for SELLs)
+# AND estimated dates not older than prev trading day (needed for live BUY signals
+# — future earnings have is_estimated=True until EPS is published; also covers
+# yesterday's AMC earnings where yfinance hasn't flipped is_estimated yet)
+if "is_estimated" in df_earnings.columns:
+    prev_td = prev_trading_day(today)
+    df_earnings["_rel"] = pd.to_datetime(df_earnings["date"], errors="coerce")
+    df_earnings = df_earnings[
+        (df_earnings["is_estimated"] == False)
+        | (df_earnings["_rel"] >= pd.Timestamp(prev_td))
+    ]
+    df_earnings = df_earnings.drop(columns=["_rel"])
 
 # 6. Determine buy/sell signals
 next_day = next_trading_day(today)
