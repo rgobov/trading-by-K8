@@ -229,66 +229,14 @@ total_capital = summary["current_capital"]
 free_capital = summary["free_capital"]
 open_positions = portfolio.open_positions
 
-# Commit SELLs FIRST (frees capital for BUYs), mirroring backtest day loop
-sells_today_unique = []
-seen_sell_tickers = set()
-for s in sells_today:
-    if s["ticker"] in seen_sell_tickers:
-        continue
-    seen_sell_tickers.add(s["ticker"])
-    res = portfolio.close_trade(s["ticker"], s["price"])
-    if "pnl" in res:
-        log(f"SELL {s['ticker']}: buy={s['buy_price']} → sell={s['price']}  pnl=${res['pnl']:.2f}")
-        s["pnl"] = res["pnl"]
-        sells_today_unique.append(s)
+# Allocate BUYs — НЕ коммитим, только генерируем сигналы
+buys_today = allocate_signals(raw_signals_today, summary["current_capital"],
+                              summary["free_capital"], portfolio.open_positions,
+                              leverage=leverage)
 
-sells_today = sells_today_unique
-
-# Allocate BUYs at today state (after sells committed)
-summary = portfolio.summary()
-total_capital = summary["current_capital"]
-free_capital = summary["free_capital"]
-open_positions = portfolio.open_positions
-buys_today = allocate_signals(raw_signals_today, total_capital, free_capital,
-                              open_positions, leverage=leverage)
-
-# Commit BUYs atomically (mirroring backtest: capital unchanged during buy,
-# positions tracked in open_positions, free_capital = capital - sum(own_cost))
-today_str = str(today)
-already_open = {p["ticker"] for p in portfolio.open_positions}
-committable = [b for b in buys_today if b["ticker"] not in already_open]
-if committable:
-    lev_mult = 1 + leverage
-    total_own = round(sum(b["size"] / lev_mult for b in committable), 2)
-    free = portfolio.free_capital()
-    if total_own <= free:
-        for b in committable:
-            pos = {
-                "ticker": b["ticker"],
-                "k_value": round(b["K"], 2) if b["K"] else 0,
-                "buy_price": round(b["price"], 2),
-                "shares": b["shares"],
-                "cost": b["size"],
-                "leverage": leverage,
-                "buy_date": today_str,
-                "status": "open",
-            }
-            portfolio.open_positions.append(pos)
-            log(f"BUY {b['ticker']}: {b['shares']} @ ${b['price']:.2f}  cost=${b['size']:.0f}  own=${b['size']/lev_mult:.0f}  lev={leverage*100:.0f}%")
-        portfolio.save()
-    else:
-        log(f"SKIP all BUYs: total own ${total_own:.0f} needed, free ${free:.0f}")
-        buys_today = []
-else:
-    buys_today = []
-
-# Forecast tomorrow's BUYs against post-today state (NOT committed)
-summary = portfolio.summary()
-total_capital = summary["current_capital"]
-free_capital = summary["free_capital"]
-open_positions = portfolio.open_positions
-buys_tomorrow = allocate_signals(raw_signals_tomorrow, total_capital, free_capital,
-                                  open_positions, leverage=leverage)
+buys_tomorrow = allocate_signals(raw_signals_tomorrow, summary["current_capital"],
+                                  summary["free_capital"], portfolio.open_positions,
+                                  leverage=leverage)
 
 # 7. Generate report
 log(f"Signals: {len(sells_today)} sells, {len(buys_today)} buys (AMC), {len(buys_tomorrow)} buys (tomorrow), {len(buys_missed)} missed (BMO)")

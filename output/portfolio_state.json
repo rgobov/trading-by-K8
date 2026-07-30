@@ -1,7 +1,8 @@
 {
   "initial_capital": 1500,
-  "current_capital": 102000,
-  "open_positions": [
+  "current_capital": 1500,
+  "open_positions": [],
+  "completed_trades": [
     {
       "ticker": "FTAI",
       "k_value": 1.93,
@@ -9,18 +10,13 @@
       "shares": 248,
       "cost": 50839.1,
       "buy_date": "2026-07-29",
-      "status": "open"
-    },
-    {
-      "ticker": "CRS",
-      "k_value": 0.72,
-      "buy_price": 541.46,
-      "shares": 78,
-      "cost": 42290.9,
-      "buy_date": "2026-07-29",
-      "status": "open"
+      "status": "closed",
+      "sell_price": 196.84,
+      "sell_date": "2026-07-30",
+      "pnl": -2088.68
     }
   ],
-  "completed_trades": [],
-  "last_update": "2026-07-29"
+  "universe": "russell1000",
+  "leverage": 0.0,
+  "last_update": "2026-07-30"
 }

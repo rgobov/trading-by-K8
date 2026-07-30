@@ -345,11 +345,11 @@ class App:
                 _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
                 yield ft.Container(ft.Row([
                     ft.Text(t, width=80, weight="bold"),
-                    ft.Text(f"K={k:.2f}", width=70, size=12),
-                    ft.Text(f"${price:.2f}" if price else "-", width=80),
-                    ft.Text(f"{shares} шт", width=60),
-                    ft.Text(f"${cost:,.0f}" if cost else "-", width=100),
-                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                    ft.Text(f"K={k:.2f}", width=65, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=70),
+                    ft.Text(f"{shares} шт", width=55),
+                    ft.Text(f"${cost:,.0f}" if cost else "-", width=90),
+                    ft.Text(uname[:6], width=60, size=11, color="grey"),
                 ]), bgcolor="#33ff0000", padding=5, border_radius=5)
             yield ft.Divider(height=5)
         elif not buys_today and not buys_tmr:
@@ -360,13 +360,20 @@ class App:
             yield ft.Text(f"🟢 КУПИТЬ СЕГОДНЯ ({len(buys_today)})", size=18, weight="bold", color="green")
             for s_data in buys_today:
                 _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
+                def make_buy(tkr, k_val, pr, sh, cst):
+                    def buy(e):
+                        r = self.portfolio.commit_buy(tkr, k_val, pr, sh, lev)
+                        rebuild()
+                    return buy
                 yield ft.Container(ft.Row([
                     ft.Text(t, width=80, weight="bold", color="green"),
-                    ft.Text(f"K={k:.2f}", width=70, size=12),
-                    ft.Text(f"${price:.2f}" if price else "-", width=80),
-                    ft.Text(f"{shares} шт", width=60),
-                    ft.Text(f"${cost:,.0f}" if cost else "-", width=100),
-                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                    ft.Text(f"K={k:.2f}", width=65, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=70),
+                    ft.Text(f"{shares} шт", width=55),
+                    ft.Text(f"${cost:,.0f}" if cost else "-", width=90),
+                    ft.Text(uname[:6], width=60, size=11, color="grey"),
+                    ft.Button("➕ Купить", on_click=make_buy(t, k, price, shares, cost),
+                              bgcolor="green", color="white"),
                 ]), bgcolor="#3300ff00", padding=5, border_radius=5)
             yield ft.Divider(height=5)
 
