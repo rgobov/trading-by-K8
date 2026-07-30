@@ -176,9 +176,9 @@ class App:
                     return {"action": "buy_tmr", "label": "BUY TMR AMC", "color": "lightgreen"}
                 return {"action": "", "label": "удерживаем", "color": "grey"}
 
-            # Отчёт позже — просто дата
+            # Отчёт позже — не показываем
             if d > nxt:
-                return {"action": "", "label": str(d), "color": "grey"}
+                return {"action": "", "label": "", "color": ""}
         return {"action": "", "label": "", "color": ""}
 
     def _run_pipeline(self, page, status_row):
