@@ -238,7 +238,18 @@ class App:
             page.controls.extend(self.build(page))
             page.update()
 
-        # === Stats bar ===
+        def signal_rows():
+            """Yield (action, ticker, K, price, shares, cost, label, color, universe, pos_dict)"""
+            for uname in UNIVERSES:
+                for r in self.candidates.get(uname, []):
+                    sig = self._signal_for(r["ticker"])
+                    if not sig["action"]:
+                        continue
+                    pos = self.calc_position(cap, lev, r["K"], r["sector"], r.get("price"))
+                    yield (sig["action"], r["ticker"], r["K"], r.get("price"),
+                           pos["shares"], pos["cost"], sig["label"], sig["color"], uname, pos)
+
+        # ========== STATS ==========
         yield ft.Row([
             ft.Container(ft.Column([
                 ft.Text("Портфель", size=12, color="grey"),
@@ -259,11 +270,9 @@ class App:
             ], spacing=2), expand=1),
         ])
 
-        # === Capital + Leverage ===
-        cap_input = ft.TextField(value=str(int(cap)), width=140, text_align="right")
+        # ========== CONTROLS ==========
+        cap_input = ft.TextField(value=str(int(cap)), width=130, text_align="right")
         lev_text = ft.Text(f"{lev*100:.0f}%", size=16, weight="bold", width=50)
-        refresh_btn = ft.Button("⟳ Обновить цены+отчёты", icon="refresh",
-                                bgcolor="blue", color="white")
 
         def on_capital(e):
             try:
@@ -287,21 +296,22 @@ class App:
                 rebuild()
             threading.Thread(target=run, daemon=True).start()
 
-        cap_btn = ft.Button("Применить", on_click=on_capital)
         yield ft.Row([
             ft.Container(ft.Row([
-                ft.Text("Капитал: $", size=14), cap_input, cap_btn,
+                ft.Text("Капитал: $", size=14), cap_input,
+                ft.Button("OK", on_click=on_capital),
             ]), expand=1),
             ft.Container(ft.Row([
                 ft.Text("Плечо:", size=14),
                 ft.Slider(value=lev*100, min=0, max=100, divisions=20,
-                         label="{value}%", width=180, on_change=on_leverage),
+                         label="{value}%", width=160, on_change=on_leverage),
                 lev_text,
             ]), expand=2),
-            refresh_btn,
+            ft.Button("⟳ Обновить", icon="refresh", bgcolor="blue", color="white",
+                      on_click=on_refresh),
         ])
 
-        yield ft.Divider()
+        yield ft.Divider(height=5)
 
         if not self.candidates:
             yield ft.Row([ft.ProgressRing(), ft.Text("Нет кандидатов — нажми ⟳ Pipeline", size=14, color="grey")])
@@ -310,130 +320,90 @@ class App:
             yield ft.Text(f"Ошибка: {self.load_error}", color="red")
             return
         if self.price_stale:
-            yield ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("Обновление цен и отчётов...", size=12, color="grey")])
+            yield ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("Обновление цен...", size=12, color="grey")])
 
-        # === Tabs: Universe candidates ===
-        tab_labels = []
-        tab_contents = []
-        for uname, spec in UNIVERSES.items():
-            rows = self.candidates.get(uname, [])
-            tab_labels.append(ft.Tab(label=f"{spec['label']} ({len(rows)})"))
-            if not rows:
-                tab_contents.append(ft.Text("Нет кандидатов", italic=True, color="grey"))
-                continue
+        # ========== SIGNALS ==========
+        signals = list(signal_rows())
+        sells = [s for s in signals if s[0] == "sell"]
+        buys_today = [s for s in signals if s[0] == "buy_today"]
+        buys_tmr = [s for s in signals if s[0] == "buy_tmr"]
+        missed = [s for s in signals if s[0] == "missed"]
 
-            rows.sort(key=lambda r: r["K"], reverse=True)
-
-            header = ft.Row([
-                ft.Text("#", weight="bold", width=28),
-                ft.Text("Тикер", weight="bold", width=75),
-                ft.Text("K", weight="bold", width=55),
-                ft.Text("Сектор", weight="bold", width=105),
-                ft.Text("Цена", weight="bold", width=72),
-                ft.Text("Доля", weight="bold", width=48),
-                ft.Text("Шт", weight="bold", width=50),
-                ft.Text("Стоим.", weight="bold", width=75),
-                ft.Text("Сигнал", weight="bold", width=110),
-            ], vertical_alignment="center")
-
-            items = [header]
-            for i, r in enumerate(rows):
-                pos = self.calc_position(cap, lev, r["K"], r["sector"], r.get("price"))
-                sig = self._signal_for(r["ticker"])
-                items.append(ft.Row([
-                    ft.Text(str(i+1), width=28, color="grey"),
-                    ft.Text(r["ticker"], width=75, weight="bold"),
-                    ft.Text(f"{r['K']:.2f}", width=55),
-                    ft.Text(r.get("sector","")[:14], width=105, size=11),
-                    ft.Text(f"${r.get('price',0):.2f}" if r.get("price") else "-", width=72),
-                    ft.Text(f"{pos['pos_share']*100:.0f}%", width=48),
-                    ft.Text(str(pos["shares"]) if pos["shares"] else "-", width=50),
-                    ft.Text(f"${pos['cost']:,.0f}" if pos["cost"] else "-", width=75),
-                    ft.Text(sig["label"], width=110, size=12, color=sig["color"], weight="bold"),
-                ], vertical_alignment="center"))
-
-            tab_contents.append(ft.Column(items, scroll=ft.ScrollMode.AUTO, height=380))
-
-        if tab_labels:
-            yield ft.Tabs(
-                length=len(tab_labels),
-                content=ft.Column([
-                    ft.TabBar(tabs=tab_labels),
-                    ft.TabBarView(controls=tab_contents, expand=True),
-                ]),
-            )
-
-        # === Общая сводка сигналов ===
-        all_buys_today = []
-        all_buys_tmr = []
-        all_sells = []
-        for uname in UNIVERSES:
-            for r in self.candidates.get(uname, []):
-                sig = self._signal_for(r["ticker"])
-                if sig["action"] == "buy_today":
-                    pos = self.calc_position(cap, lev, r["K"], r["sector"], r.get("price"))
-                    all_buys_today.append({**r, "pos": pos, "sig": sig})
-                elif sig["action"] == "buy_tmr":
-                    pos = self.calc_position(cap, lev, r["K"], r["sector"], r.get("price"))
-                    all_buys_tmr.append({**r, "pos": pos, "sig": sig})
-
-        for p in self.portfolio.open_positions:
-            sig = self._signal_for(p["ticker"])
-            if sig["action"] == "sell":
-                all_sells.append({**p, "sig": sig})
-
-        yield ft.Divider()
-        if all_sells:
-            yield ft.Text("🔴 ПРОДАЖА СЕГОДНЯ (отчёт сегодня, закрыть позицию)", size=16, weight="bold", color="red")
-            for s in all_sells:
-                yield ft.Row([
-                    ft.Text(s["ticker"], width=80, weight="bold"),
-                    ft.Text(f"купили ${s['buy_price']:.2f}", width=150),
-                    ft.Text(f"{s['shares']} шт", width=60),
-                    ft.Text(f"стоимость ${s['cost']:,.0f}", width=120),
-                ])
-
-        if all_buys_today:
-            yield ft.Text(f"🟢 КУПИТЬ СЕГОДНЯ НА ЗАКРЫТИИ ({len(all_buys_today)})", size=16, weight="bold", color="green")
-            for b in all_buys_today:
-                yield ft.Row([
-                    ft.Text(b["ticker"], width=80, weight="bold"),
-                    ft.Text(f"K={b['K']:.2f}", width=70),
-                    ft.Text(f"${b.get('price',0):.2f}", width=80),
-                    ft.Text(f"{b['pos']['shares']} шт", width=60),
-                    ft.Text(f"${b['pos']['cost']:,.0f}", width=100),
-                ])
-
-        if all_buys_tmr:
-            yield ft.Text(f"🟡 КУПИТЬ ЗАВТРА НА ЗАКРЫТИИ ({len(all_buys_tmr)})", size=16, weight="bold", color="yellow")
-            for b in all_buys_tmr:
-                yield ft.Row([
-                    ft.Text(b["ticker"], width=80, weight="bold"),
-                    ft.Text(f"K={b['K']:.2f}", width=70),
-                    ft.Text(f"${b.get('price',0):.2f}", width=80),
-                    ft.Text(f"{b['pos']['shares']} шт", width=60),
-                    ft.Text(f"${b['pos']['cost']:,.0f}", width=100),
-                ])
-
-        if not all_sells and not all_buys_today and not all_buys_tmr:
+        # --- SELL ---
+        if sells:
+            yield ft.Text("🔴 ПРОДАТЬ СЕГОДНЯ", size=18, weight="bold", color="red")
+            for s_data in sells:
+                _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
+                yield ft.Container(ft.Row([
+                    ft.Text(t, width=80, weight="bold"),
+                    ft.Text(f"K={k:.2f}", width=70, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=80),
+                    ft.Text(f"{shares} шт", width=60),
+                    ft.Text(f"${cost:,.0f}" if cost else "-", width=100),
+                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                ]), bgcolor="#33ff0000", padding=5, border_radius=5)
+            yield ft.Divider(height=5)
+        elif not buys_today and not buys_tmr:
             yield ft.Text("Нет сигналов на сегодня/завтра", italic=True, color="grey")
 
-        yield ft.Divider()
+        # --- BUY TODAY ---
+        if buys_today:
+            yield ft.Text(f"🟢 КУПИТЬ СЕГОДНЯ ({len(buys_today)})", size=18, weight="bold", color="green")
+            for s_data in buys_today:
+                _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
+                yield ft.Container(ft.Row([
+                    ft.Text(t, width=80, weight="bold", color="green"),
+                    ft.Text(f"K={k:.2f}", width=70, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=80),
+                    ft.Text(f"{shares} шт", width=60),
+                    ft.Text(f"${cost:,.0f}" if cost else "-", width=100),
+                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                ]), bgcolor="#3300ff00", padding=5, border_radius=5)
+            yield ft.Divider(height=5)
 
-        # === Open positions (live close) ===
-        yield ft.Text("🟡 Открытые позиции", size=18, weight="bold")
+        # --- BUY TOMORROW ---
+        if buys_tmr:
+            yield ft.Text(f"🟡 КУПИТЬ ЗАВТРА ({len(buys_tmr)})", size=18, weight="bold", color="yellow")
+            for s_data in buys_tmr:
+                _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
+                yield ft.Container(ft.Row([
+                    ft.Text(t, width=80, weight="bold"),
+                    ft.Text(f"K={k:.2f}", width=70, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=80),
+                    ft.Text(f"{shares} шт", width=60),
+                    ft.Text(f"${cost:,.0f}" if cost else "-", width=100),
+                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                ]), bgcolor="#33ffff00", padding=5, border_radius=5)
+            yield ft.Divider(height=5)
+
+        # --- MISSED ---
+        if missed:
+            yield ft.Text(f"🔸 ПРОПУЩЕНО (BMO)", size=14, weight="bold", color="orange")
+            for s_data in missed:
+                _, t, k, price, shares, cost, label, color, uname, pos_dict = s_data
+                yield ft.Row([
+                    ft.Text(t, width=80, weight="bold"),
+                    ft.Text(f"K={k:.2f}", width=70, size=12),
+                    ft.Text(f"${price:.2f}" if price else "-", width=80),
+                    ft.Text(uname[:8], width=80, size=11, color="grey"),
+                    ft.Text(label, size=11, color="orange"),
+                ])
+            yield ft.Divider(height=5)
+
+        # ========== OPEN POSITIONS ==========
+        yield ft.Text("🟡 Открытые позиции", size=16, weight="bold")
         if not self.portfolio.open_positions:
             yield ft.Text("Нет открытых позиций", italic=True, color="grey")
         else:
             yield ft.Row([
                 ft.Text("Тикер", weight="bold", width=70),
-                ft.Text("Цена покупки", weight="bold", width=90),
+                ft.Text("Куплено", weight="bold", width=80),
                 ft.Text("Шт", weight="bold", width=40),
-                ft.Text("Стоимость", weight="bold", width=90),
-                ft.Text("Цена закрытия", weight="bold", width=100),
+                ft.Text("Стоимость", weight="bold", width=80),
+                ft.Text("Цена закр.", weight="bold", width=90),
             ])
             for p in self.portfolio.open_positions:
-                inp = ft.TextField(value="", width=90, text_align="right")
+                inp = ft.TextField(value="", width=80, text_align="right")
                 pnl_t = ft.Text("", color="grey")
                 def make_close(pos, i, pt):
                     def close(e):
@@ -442,8 +412,7 @@ class App:
                         r = self.portfolio.close_trade(pos["ticker"], sp)
                         if "note" in r and "pnl" not in r:
                             page.snack_bar = ft.SnackBar(ft.Text(f"Не найдено: {r['note']}"))
-                            page.snack_bar.open = True
-                            page.update()
+                            page.snack_bar.open = True; page.update()
                             return
                         rebuild()
                     return close
@@ -461,42 +430,74 @@ class App:
                 inp.on_change = make_pnl(inp, pnl_t)
                 yield ft.Row([
                     ft.Text(p["ticker"], width=70, weight="bold"),
-                    ft.Text(f"${p['buy_price']:.2f}", width=90),
+                    ft.Text(f"${p['buy_price']:.2f}", width=80),
                     ft.Text(str(p["shares"]), width=40),
-                    ft.Text(f"${p['cost']:,.0f}", width=90),
+                    ft.Text(f"${p['cost']:,.0f}", width=80),
                     inp,
                     ft.Button("Закрыть", on_click=make_close(p, inp, pnl_t),
                               bgcolor="red", color="white"),
                     pnl_t,
                 ], vertical_alignment="center")
 
-        yield ft.Divider()
+        yield ft.Divider(height=5)
 
-        # === History ===
-        yield ft.Text("📜 История (последние 20)", size=18, weight="bold")
+        # ========== HISTORY ==========
+        yield ft.Text("📜 История", size=16, weight="bold")
         if not self.portfolio.completed_trades:
             yield ft.Text("Нет закрытых сделок", italic=True, color="grey")
         else:
-            yield ft.Row([
-                ft.Text("Тикер", weight="bold", width=80),
-                ft.Text("Дата", weight="bold", width=90),
-                ft.Text("PNL", weight="bold", width=100),
-            ])
-            for h in self.portfolio.completed_trades[-20:]:
+            for h in self.portfolio.completed_trades[-15:]:
                 pnl = h.get("pnl", 0)
                 yield ft.Row([
-                    ft.Text(h["ticker"], width=80),
-                    ft.Text(h.get("sell_date", "-"), width=90),
+                    ft.Text(h["ticker"], width=70),
+                    ft.Text(h.get("sell_date", "-"), width=90, size=12),
                     ft.Text(f"{'+' if pnl>=0 else ''}${pnl:,.0f}", width=100,
                             color="green" if pnl >= 0 else "red"),
                 ])
 
-        # === Bottom buttons ===
+        yield ft.Divider(height=5)
+
+        # ========== CANDIDATE LIST (collapsible) ==========
+        show_candidates = ft.Ref[ft.Column]()
+        toggle_btn = ft.Ref[ft.Button]()
+
+        def toggle_candidates(e):
+            c = show_candidates.current
+            if c is None: return
+            c.visible = not c.visible
+            e.control.text = "▶ Кандидаты" if not c.visible else "▼ Кандидаты"
+            page.update()
+
+        cand_rows = []
+        for uname, spec in UNIVERSES.items():
+            rows = self.candidates.get(uname, [])
+            rows.sort(key=lambda r: r["K"], reverse=True)
+            cand_rows.append(ft.Text(f"{spec['label']} ({len(rows)}):", size=13, weight="bold"))
+            for r in rows:
+                sig = self._signal_for(r["ticker"])
+                label = sig["label"] if sig["label"] else ""
+                cand_rows.append(ft.Row([
+                    ft.Text(r["ticker"], width=70, size=11),
+                    ft.Text(f"K={r['K']:.2f}", width=65, size=10),
+                    ft.Text(r.get("sector","")[:12], width=90, size=10),
+                    ft.Text(label, width=100, size=10, color=sig.get("color","grey")),
+                ], vertical_alignment="center", spacing=2))
+            cand_rows.append(ft.Divider(height=2))
+
+        total_cand = sum(len(self.candidates.get(u, [])) for u in UNIVERSES)
+        yield ft.Row([
+            ft.Button(f"▶ Все кандидаты ({total_cand})", ref=toggle_btn,
+                      on_click=toggle_candidates, bgcolor="grey", color="white", icon="list"),
+        ])
+        yield ft.Column(ref=show_candidates, controls=cand_rows, visible=False)
+
+        yield ft.Divider(height=5)
+
+        # ========== BOTTOM BUTTONS ==========
         def export_state(e):
             self.portfolio.save()
             page.snack_bar = ft.SnackBar(ft.Text("Сохранено"))
-            page.snack_bar.open = True
-            page.update()
+            page.snack_bar.open = True; page.update()
         def reset_tracker(e):
             self.portfolio.open_positions = []
             self.portfolio.completed_trades = []
@@ -512,8 +513,7 @@ class App:
             if self._pipeline_proc: self._pipeline_proc.kill()
         def on_pipeline(e):
             if self._pipeline_running:
-                cancel_pipeline()
-                return
+                cancel_pipeline(); return
             pipeline_progress.visible = True
             pipeline_status.value = "Запуск..."
             pipeline_btn.text = "⏹ Стоп"
@@ -521,8 +521,7 @@ class App:
             page.update()
             def run():
                 try: self._run_pipeline(page, ft.Row([pipeline_progress, pipeline_status]))
-                except Exception as ex:
-                    pipeline_status.value = f"Ошибка: {ex}"
+                except Exception as ex: pipeline_status.value = f"Ошибка: {ex}"
                 pipeline_progress.visible = False
                 pipeline_btn.text = "⟳ Pipeline"
                 pipeline_btn.bgcolor = "green"
@@ -531,7 +530,6 @@ class App:
             threading.Thread(target=run, daemon=True).start()
         pipeline_btn.on_click = on_pipeline
 
-        yield ft.Divider()
         yield ft.Row([
             pipeline_progress, pipeline_status, pipeline_btn,
             ft.Button("💾 Сохранить", on_click=export_state, bgcolor="blue", color="white"),
