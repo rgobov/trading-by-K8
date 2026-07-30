@@ -14,6 +14,7 @@ from src.config import (
 )
 from src.portfolio import Portfolio
 
+PRICE_CACHE_PATH = os.path.join(OUTPUT_DIR, "price_cache.json")
 UNIVERSES = {
     UNIVERSE_RUSSELL: {"label": "Russell 1000"},
     UNIVERSE_SP500:   {"label": "S&P 500"},
@@ -23,15 +24,16 @@ class App:
     def __init__(self):
         self.portfolio = Portfolio(initial_capital=1500)
         self.candidates: dict[str, list[dict]] = {}
-        self.loading = True
+        self.prices: dict[str, float] = {}
+        self.price_stale = True
         self.load_error = ""
         self._pipeline_running = False
         self._pipeline_cancelled = False
         self._pipeline_proc = None
-        self._load_candidates()
+        self._load_candidates_fast()
 
-    def _load_candidates(self):
-        """Load pre-computed filtered candidates for each universe + fetch prices"""
+    def _load_candidates_fast(self):
+        """Load candidates from CSVs + cached prices (fast, no yfinance)."""
         try:
             all_tickers = []
             for uname, spec in UNIVERSES.items():
@@ -50,23 +52,42 @@ class App:
                 self.candidates[uname] = rows
                 all_tickers.extend(r["ticker"] for r in rows)
 
-            # Батч-загрузка цен
-            if all_tickers:
-                hist = yf.download(" ".join(all_tickers), period="5d", progress=False, auto_adjust=True)
-                prices = {}
-                if not hist.empty and isinstance(hist.columns, pd.MultiIndex):
-                    for t in all_tickers:
-                        try:
-                            prices[t] = float(hist[("Close", t)].dropna().iloc[-1])
-                        except:
-                            pass
-                for uname in self.candidates:
-                    for r in self.candidates[uname]:
-                        r["price"] = prices.get(r["ticker"])
-            self.loading = False
+            # Load cached prices
+            if os.path.exists(PRICE_CACHE_PATH):
+                self.prices = json.load(open(PRICE_CACHE_PATH))
+
+            self._apply_prices()
         except Exception as e:
             self.load_error = str(e)
-            self.loading = False
+
+    def _apply_prices(self):
+        for uname in self.candidates:
+            for r in self.candidates[uname]:
+                r["price"] = self.prices.get(r["ticker"])
+
+    def _refresh_prices(self):
+        """Download fresh prices from yfinance in background."""
+        all_tickers = list(set(
+            r["ticker"] for rows in self.candidates.values() for r in rows
+        ))
+        if not all_tickers:
+            return
+        try:
+            hist = yf.download(" ".join(all_tickers), period="5d", progress=False, auto_adjust=True)
+            prices = {}
+            if not hist.empty and isinstance(hist.columns, pd.MultiIndex):
+                for t in all_tickers:
+                    try:
+                        prices[t] = round(float(hist[("Close", t)].dropna().iloc[-1]), 2)
+                    except:
+                        pass
+            if prices:
+                self.prices.update(prices)
+                json.dump(self.prices, open(PRICE_CACHE_PATH, "w"))
+                self._apply_prices()
+        except Exception as e:
+            self.load_error = str(e)
+        self.price_stale = False
 
     def _run_pipeline(self, page, status_row):
         self._pipeline_running = True
@@ -94,7 +115,8 @@ class App:
         self._pipeline_proc.wait(timeout=7200)
         self._pipeline_proc = None
         self._pipeline_running = False
-        self._load_candidates()
+        self._load_candidates_fast()
+        self._refresh_prices()
 
     def calc_position(self, capital: float, leverage: float, K: float, sector: str, price: float) -> dict:
         if not price or price <= 0:
@@ -142,7 +164,7 @@ class App:
         # === Capital + Leverage controls ===
         cap_input = ft.TextField(value=str(int(cap)), width=140, text_align="right")
         lev_text = ft.Text(f"{lev*100:.0f}%", size=16, weight="bold", width=50)
-        refresh_btn = ft.ElevatedButton("⟳ Обновить цены", icon="refresh",
+        refresh_btn = ft.Button("⟳ Обновить цены", icon="refresh",
                                          bgcolor="blue", color="white")
 
         def rebuild():
@@ -167,14 +189,14 @@ class App:
             rebuild()
 
         def on_refresh(e):
-            self.loading = True
+            self.price_stale = True
             rebuild()
             def run():
-                self._load_candidates()
+                self._refresh_prices()
                 rebuild()
             threading.Thread(target=run, daemon=True).start()
 
-        cap_btn = ft.ElevatedButton("Применить", on_click=on_capital_change)
+        cap_btn = ft.Button("Применить", on_click=on_capital_change)
         yield ft.Row([
             ft.Container(ft.Row([
                 ft.Text("Капитал: $", size=14),
@@ -193,22 +215,25 @@ class App:
         yield ft.Divider()
 
         # === Loading / Error ===
-        if self.loading:
-            yield ft.Row([ft.ProgressRing(), ft.Text("Загрузка данных...", size=14, color="grey")])
+        if not self.candidates:
+            yield ft.Row([ft.ProgressRing(), ft.Text("Нет кандидатов — нажми ⟳ Pipeline", size=14, color="grey")])
             return
         if self.load_error:
             yield ft.Text(f"Ошибка: {self.load_error}", color="red")
             return
+        if self.price_stale:
+            yield ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("Обновление цен...", size=12, color="grey")])
 
         # === Universe tabs ===
-        tabs = []
+        tab_labels = []
+        tab_contents = []
         for uname, spec in UNIVERSES.items():
             rows = self.candidates.get(uname, [])
+            tab_labels.append(ft.Tab(label=f"{spec['label']} ({len(rows)})"))
             if not rows:
-                tabs.append(ft.Tab(text=spec["label"], content=ft.Text("Нет кандидатов", italic=True, color="grey")))
+                tab_contents.append(ft.Text("Нет кандидатов", italic=True, color="grey"))
                 continue
 
-            # Sort by K desc
             rows.sort(key=lambda r: r["K"], reverse=True)
 
             header = ft.Row([
@@ -236,10 +261,16 @@ class App:
                     ft.Text(f"${pos['cost']:,.0f}" if pos["cost"] else "-", width=100),
                 ], vertical_alignment="center"))
 
-            content = ft.Column(items, scroll=ft.ScrollMode.AUTO, height=400)
-            tabs.append(ft.Tab(text=f"{spec['label']} ({len(rows)})", content=content))
+            tab_contents.append(ft.Column(items, scroll=ft.ScrollMode.AUTO, height=400))
 
-        yield ft.Tabs(tabs=tabs)
+        if tab_labels:
+            yield ft.Tabs(
+                length=len(tab_labels),
+                content=ft.Column([
+                    ft.TabBar(tabs=tab_labels),
+                    ft.TabBarView(controls=tab_contents, expand=True),
+                ]),
+            )
 
         yield ft.Divider()
 
@@ -291,7 +322,7 @@ class App:
                     ft.Text(str(p["shares"]), width=50),
                     ft.Text(f"${p['cost']:,.0f}", width=100),
                     price_input,
-                    ft.ElevatedButton("Закрыть", on_click=make_close(p, price_input, pnl_text),
+                    ft.Button("Закрыть", on_click=make_close(p, price_input, pnl_text),
                                       bgcolor="red", color="white"),
                     pnl_text,
                 ], vertical_alignment="center")
@@ -332,7 +363,7 @@ class App:
 
         pipeline_progress = ft.ProgressRing(visible=False)
         pipeline_status = ft.Text("", size=12, color="grey")
-        pipeline_btn = ft.ElevatedButton("⟳ Pipeline", bgcolor="green", color="white",
+        pipeline_btn = ft.Button("⟳ Pipeline", bgcolor="green", color="white",
                                           icon="rocket_launch")
 
         def cancel_pipeline(e=None):
@@ -369,8 +400,8 @@ class App:
             pipeline_progress,
             pipeline_status,
             pipeline_btn,
-            ft.ElevatedButton("💾 Сохранить", on_click=export_state, bgcolor="blue", color="white"),
-            ft.ElevatedButton("Сброс", on_click=reset_tracker, bgcolor="red", color="white"),
+            ft.Button("💾 Сохранить", on_click=export_state, bgcolor="blue", color="white"),
+            ft.Button("Сброс", on_click=reset_tracker, bgcolor="red", color="white"),
         ])
 
 def main(page: ft.Page):
@@ -386,5 +417,14 @@ def main(page: ft.Page):
     app = App()
     page.controls.extend(app.build(page))
     page.update()
+
+    # Refresh prices in background (async, doesn't block UI)
+    if app.price_stale:
+        def refresh():
+            app._refresh_prices()
+            page.controls.clear()
+            page.controls.extend(app.build(page))
+            page.update()
+        threading.Thread(target=refresh, daemon=True).start()
 
 ft.run(main)
