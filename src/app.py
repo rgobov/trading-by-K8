@@ -126,10 +126,11 @@ class App:
             self.load_error = str(e)
 
     def _signal_for(self, ticker: str) -> dict:
-        """Возвращает {'action': 'buy_today'|'buy_tmr'|'sell'|'missed'|'', 'date': '', 'label': ''}"""
+        """Сигнал по стратегии: buy T-1, sell T+1 (T=дата отчёта).
+        Возвращает {'action': 'buy_today'|'buy_tmr'|'sell'|'missed'|'', 'label': '', 'color': ''}"""
         eds = self.earnings.get(ticker, [])
         if not eds:
-            return {"action": "", "date": "", "label": "", "color": ""}
+            return {"action": "", "label": "", "color": ""}
         today = date.today()
         nxt = next_trading_day(today)
         prv = prev_trading_day(today)
@@ -139,33 +140,46 @@ class App:
             except:
                 continue
             dt_str = ed.get("datetime", "")
-            is_amc = False
+            is_amc = True  # default to AMC
             if dt_str and len(dt_str) >= 19:
                 try:
                     h = datetime.strptime(dt_str[:19], "%Y-%m-%d %H:%M:%S").hour
                     is_amc = h >= 16
                 except:
                     pass
-            # SELL: отчёт сегодня — продажа сегодня (позиция была открыта)
-            if d == today:
-                for p in self.portfolio.open_positions:
-                    if p["ticker"] == ticker:
-                        return {"action": "sell", "date": str(today), "label": "SELL", "color": "red"}
-                # BUY AMC: отчёт сегодня после закрытия → купить сегодня
-                if is_amc:
-                    return {"action": "buy_today", "date": str(today), "label": "BUY AMC", "color": "green"}
-                else:
-                    return {"action": "missed", "date": str(today), "label": "BMO TODAY", "color": "orange"}
-            # BUY: отчёт завтра → купить сегодня (если BMO) или завтра (если AMC)
-            if d == nxt:
-                if is_amc:
-                    return {"action": "buy_tmr", "date": str(nxt), "label": "BUY TMR", "color": "lightgreen"}
-                else:
-                    return {"action": "buy_today", "date": str(nxt), "label": "BUY TMR BMO", "color": "green"}
-            # Отчёт послезавтра и дальше — просто показываем дату
+            open_here = any(p["ticker"] == ticker for p in self.portfolio.open_positions)
+
+            # SELL: отчёт был ВЧЕРА (T-1) — продажа сегодня
+            if d == prv and open_here:
+                return {"action": "sell", "label": "SELL", "color": "red"}
+
+            # BUY: отчёт сегодня AMC → купить сегодня на закрытии
+            if d == today and is_amc:
+                if open_here:
+                    return {"action": "", "label": "удерживаем", "color": "grey"}
+                return {"action": "buy_today", "label": "BUY AMC", "color": "green"}
+
+            # MISSED: отчёт сегодня BMO (гэп уже был)
+            if d == today and not is_amc:
+                if open_here:
+                    return {"action": "", "label": "продать TMR", "color": "orange"}
+                return {"action": "missed", "label": "BMO TODAY", "color": "orange"}
+
+            # BUY: отчёт ЗАВТРА BMO → купить сегодня
+            if d == nxt and not is_amc:
+                if not open_here:
+                    return {"action": "buy_today", "label": "BUY TMR BMO", "color": "green"}
+                return {"action": "", "label": "удерживаем", "color": "grey"}
+            # BUY: отчёт ЗАВТРА AMC → купить завтра
+            if d == nxt and is_amc:
+                if not open_here:
+                    return {"action": "buy_tmr", "label": "BUY TMR AMC", "color": "lightgreen"}
+                return {"action": "", "label": "удерживаем", "color": "grey"}
+
+            # Отчёт позже — просто дата
             if d > nxt:
-                return {"action": "", "date": str(d), "label": str(d), "color": "grey"}
-        return {"action": "", "date": "", "label": "", "color": ""}
+                return {"action": "", "label": str(d), "color": "grey"}
+        return {"action": "", "label": "", "color": ""}
 
     def _run_pipeline(self, page, status_row):
         self._pipeline_running = True
