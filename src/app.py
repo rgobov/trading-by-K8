@@ -156,25 +156,25 @@ class App:
             # BUY: отчёт сегодня AMC → купить сегодня на закрытии
             if d == today and is_amc:
                 if open_here:
-                    return {"action": "", "label": "удерживаем", "color": "grey"}
+                    return {"action": "", "label": "в портфеле", "color": "grey"}
                 return {"action": "buy_today", "label": "BUY AMC", "color": "green"}
 
             # MISSED: отчёт сегодня BMO (гэп уже был)
             if d == today and not is_amc:
                 if open_here:
-                    return {"action": "", "label": "продать TMR", "color": "orange"}
+                    return {"action": "", "label": "в портфеле", "color": "orange"}
                 return {"action": "missed", "label": "BMO TODAY", "color": "orange"}
 
             # BUY: отчёт ЗАВТРА BMO → купить сегодня
             if d == nxt and not is_amc:
                 if not open_here:
                     return {"action": "buy_today", "label": "BUY TMR BMO", "color": "green"}
-                return {"action": "", "label": "удерживаем", "color": "grey"}
+                return {"action": "", "label": "в портфеле", "color": "grey"}
             # BUY: отчёт ЗАВТРА AMC → купить завтра
             if d == nxt and is_amc:
                 if not open_here:
                     return {"action": "buy_tmr", "label": "BUY TMR AMC", "color": "lightgreen"}
-                return {"action": "", "label": "удерживаем", "color": "grey"}
+                return {"action": "", "label": "в портфеле", "color": "grey"}
 
             # Отчёт позже — не показываем
             if d > nxt:
@@ -321,6 +321,15 @@ class App:
             return
         if self.price_stale:
             yield ft.Row([ft.ProgressRing(width=16, height=16), ft.Text("Обновление цен...", size=12, color="grey")])
+
+        # ========== ПОРТФЕЛЬ (кратко) ==========
+        if self.portfolio.open_positions:
+            held = ', '.join(f"{p['ticker']} (${p['cost']:,.0f})" for p in self.portfolio.open_positions)
+            yield ft.Container(
+                ft.Row([ft.Text("📂 В портфеле:", weight="bold", size=14), ft.Text(held, size=14)]),
+                bgcolor="#33222288", padding=8, border_radius=5
+            )
+            yield ft.Divider(height=5)
 
         # ========== SIGNALS ==========
         signals = list(signal_rows())
